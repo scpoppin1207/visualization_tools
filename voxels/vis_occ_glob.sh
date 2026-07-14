@@ -14,7 +14,7 @@ echo ""
 read -p "Select method number: " method_choice
 
 # Load method configuration from JSON (global version)
-METHOD_CONFIG_FILE="method_global_config.json"
+METHOD_CONFIG_FILE="../config/methods/global.json"
 
 case $method_choice in
     1)
