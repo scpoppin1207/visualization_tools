@@ -109,19 +109,19 @@ mkdir -p "$PLY_ROOT/$OUTPUT_FOLDER/$MID_FOLDER"
 # Check Python environment and dependencies
 echo ""
 echo "Checking dependencies..." 
-python3 -c "import mitsuba as mi; print(f'Mitsuba version: {mi.__version__}')" 2>/dev/null
+python -c "import mitsuba as mi; print(f'Mitsuba version: {mi.__version__}')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Warning: Mitsuba not found or not properly installed"
     echo "Please install Mitsuba v3: pip install mitsuba"
 fi
 
-python3 -c "import plyfile; print('PLYfile: OK')" 2>/dev/null
+python -c "import plyfile; print('PLYfile: OK')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Warning: plyfile not found"
     echo "Please install: pip install plyfile"
 fi
 
-python3 -c "import tqdm; print('tqdm: OK')" 2>/dev/null
+python -c "import tqdm; print('tqdm: OK')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Warning: tqdm not found"
     echo "Please install: pip install tqdm"
@@ -179,7 +179,7 @@ for scene in "${SELECTED_SCENES[@]}"; do
         fi
         
         # Run Python script to render single file
-        python3 vis_gs_glob.py \
+        python vis_gs_glob.py \
             --input_file "$FULL_PLY_PATH" \
             --output_file "$OUTPUT_PATH" \
             --width $WIDTH \

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """
 3D Gaussian Splatting Renderer using Mitsuba v3 - Global Bird's Eye View
 Renders PLY files containing 3D Gaussians from top-down perspective

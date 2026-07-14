@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Scene Efficiency Visualization Tool - Accumulated Anchors vs Frame"""
 
 import re

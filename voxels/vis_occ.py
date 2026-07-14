@@ -218,7 +218,7 @@ if __name__ == "__main__":
 
     # Get path info from command line
     if len(sys.argv) != 9:
-        print("Usage: python3 vis_occ.py <pcd_root> <pcd_fold> <pcd_scene> <pcd_name> <pcd_ext> <output_folder> <show_3d> <use_zoom>")
+        print("Usage: python vis_occ.py <pcd_root> <pcd_fold> <pcd_scene> <pcd_name> <pcd_ext> <output_folder> <show_3d> <use_zoom>")
         sys.exit(1)
     
     pcd_root = Path(sys.argv[1])

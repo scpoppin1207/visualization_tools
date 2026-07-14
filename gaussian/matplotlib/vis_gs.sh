@@ -30,7 +30,7 @@ OUTPUT_DIR="$ROOT/$OUTPUT_PATH/$SCENE_PATH"
 mkdir -p "$OUTPUT_DIR"
 
 # Run Python script with correct parameters
-python3 vis_gs.py --ply_dir "$PLY_DIR" \
+python vis_gs.py --ply_dir "$PLY_DIR" \
                   --ply_name "$PLY_NAME" \
                   --output_dir "$OUTPUT_DIR" \
                   --max_ellipsoids_3d $MAX_ELLIPSOIDS_3D \

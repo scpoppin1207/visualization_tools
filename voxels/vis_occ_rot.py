@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Rotating Voxel Visualization Tool - Generate rotating animation frames"""
 
 import os
@@ -209,7 +209,7 @@ if __name__ == "__main__":
 
     # Get path info from command line
     if len(sys.argv) != 12:
-        print("Usage: python3 vis_occ_rot.py <pcd_root> <pcd_fold> <pcd_scene> <pcd_name> <pcd_ext> <output_folder> <num_frames> <start_angle> <end_angle> <image_size_width> <offscreen>")
+        print("Usage: python vis_occ_rot.py <pcd_root> <pcd_fold> <pcd_scene> <pcd_name> <pcd_ext> <output_folder> <num_frames> <start_angle> <end_angle> <image_size_width> <offscreen>")
         sys.exit(1)
     
     pcd_root = Path(sys.argv[1])

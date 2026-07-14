@@ -18,11 +18,11 @@ fi
 
 # Get available configurations
 echo "📋 Available configurations:"
-CONFIGS=($(python3 -c "import json; config=json.load(open('$EFFECT_CONFIG_FILE')); print(' '.join(config.keys()))"))
+CONFIGS=($(python -c "import json; config=json.load(open('$EFFECT_CONFIG_FILE')); print(' '.join(config.keys()))"))
 
 for i in "${!CONFIGS[@]}"; do
     config_name="${CONFIGS[$i]}"
-    desc=$(python3 -c "import json; config=json.load(open('$EFFECT_CONFIG_FILE')); print(config['$config_name'].get('description', 'No description'))")
+    desc=$(python -c "import json; config=json.load(open('$EFFECT_CONFIG_FILE')); print(config['$config_name'].get('description', 'No description'))")
     echo "  $((i+1)). $config_name - $desc"
 done
 
@@ -39,14 +39,14 @@ echo "✅ Selected configuration: $SELECTED_CONFIG"
 echo ""
 
 # Get configuration details
-OUTPUT_FOLDER=$(python3 -c "import json; print(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['output_folder'])")
-METHOD_NAMES=($(python3 -c "import json; print(' '.join(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['methods'].keys()))"))
-METRICS=($(python3 -c "import json; print(' '.join(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['metrics']))"))
+OUTPUT_FOLDER=$(python -c "import json; print(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['output_folder'])")
+METHOD_NAMES=($(python -c "import json; print(' '.join(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['methods'].keys()))"))
+METRICS=($(python -c "import json; print(' '.join(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['metrics']))"))
 
 # Validate files
 echo "🔍 Checking data files..."
 for method_name in "${METHOD_NAMES[@]}"; do
-    file_path=$(python3 -c "import json; print(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['methods']['$method_name']['path'])")
+    file_path=$(python -c "import json; print(json.load(open('$EFFECT_CONFIG_FILE'))['$SELECTED_CONFIG']['methods']['$method_name']['path'])")
     
     if [ ! -f "$file_path" ]; then
         echo "❌ Missing file: $file_path"
@@ -62,7 +62,7 @@ echo "   Methods: ${METHOD_NAMES[@]}"
 echo "   Metrics: ${METRICS[@]}"
 echo ""
 
-python3 vis_effect.py \
+python vis_effect.py \
     --config "$SELECTED_CONFIG" \
     --figsize 10 10 \
     --dpi 420

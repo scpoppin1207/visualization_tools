@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Efficiency Visualization Tool - Anchors, Features, and Memory Usage"""
 
 import re

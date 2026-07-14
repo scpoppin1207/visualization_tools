@@ -132,8 +132,8 @@ def concatenate_frames_progressively(pcd_root, pcd_fold, pcd_scene, pcd_names, p
 def main():
     """Main function to handle command line arguments"""
     if len(sys.argv) < 8: 
-        print("Usage: python3 vis_global.py <pcd_root> <pcd_fold> <pcd_scene> <output_folder> <pcd_ext> <frame1> <frame2> [...]")
-        print("Example: python3 vis_global.py /path/to/root vis_occ_da_label scene0000_00 vis_label_global .ply pcd_00004 pcd_00005 pcd_00012")
+        print("Usage: python vis_global.py <pcd_root> <pcd_fold> <pcd_scene> <output_folder> <pcd_ext> <frame1> <frame2> [...]")
+        print("Example: python vis_global.py /path/to/root vis_occ_da_label scene0000_00 vis_label_global .ply pcd_00004 pcd_00005 pcd_00012")
         sys.exit(1)
 
     # Parse command line arguments

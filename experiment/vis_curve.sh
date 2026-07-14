@@ -230,7 +230,7 @@ echo ""
 mkdir -p "$(dirname "$SAVE_PATH")"
 
 # Build Python command with envelope parameters
-PYTHON_CMD="python3 vis_curve.py --config \"$CONFIG_FILE\" --save_mode \"$SAVE_MODE\" --save_path \"$SAVE_PATH\" --figure_size \"$FIGURE_SIZE\" --envelope_mode \"$ENVELOPE_MODE\""
+PYTHON_CMD="python vis_curve.py --config \"$CONFIG_FILE\" --save_mode \"$SAVE_MODE\" --save_path \"$SAVE_PATH\" --figure_size \"$FIGURE_SIZE\" --envelope_mode \"$ENVELOPE_MODE\""
 
 if [ "$ENVELOPE_MODE" != "none" ]; then
     PYTHON_CMD="$PYTHON_CMD --envelope_color \"$ENVELOPE_COLOR\" --envelope_width $ENVELOPE_WIDTH --envelope_alpha $ENVELOPE_ALPHA"

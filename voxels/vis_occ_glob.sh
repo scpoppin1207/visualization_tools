@@ -19,27 +19,27 @@ METHOD_CONFIG_FILE="method_global_config.json"
 case $method_choice in
     1)
         METHOD_NAME="Label"
-        PCD_ROOT=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Label']['pcd_root'])")
-        PCD_FOLD=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Label']['pcd_fold'])")
-        OUTPUT_FOLDER=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Label']['output_folder'])")
+        PCD_ROOT=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Label']['pcd_root'])")
+        PCD_FOLD=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Label']['pcd_fold'])")
+        OUTPUT_FOLDER=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Label']['output_folder'])")
         ;;
     2)
         METHOD_NAME="SplatSSC"
-        PCD_ROOT=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['SplatSSC']['pcd_root'])")
-        PCD_FOLD=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['SplatSSC']['pcd_fold'])")
-        OUTPUT_FOLDER=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['SplatSSC']['output_folder'])")
+        PCD_ROOT=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['SplatSSC']['pcd_root'])")
+        PCD_FOLD=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['SplatSSC']['pcd_fold'])")
+        OUTPUT_FOLDER=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['SplatSSC']['output_folder'])")
         ;;
     3)
         METHOD_NAME="EmbodiedOcc"
-        PCD_ROOT=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['EmbodiedOcc']['pcd_root'])")
-        PCD_FOLD=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['EmbodiedOcc']['pcd_fold'])")
-        OUTPUT_FOLDER=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['EmbodiedOcc']['output_folder'])")
+        PCD_ROOT=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['EmbodiedOcc']['pcd_root'])")
+        PCD_FOLD=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['EmbodiedOcc']['pcd_fold'])")
+        OUTPUT_FOLDER=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['EmbodiedOcc']['output_folder'])")
         ;;
     4)
         METHOD_NAME="Ours"
-        PCD_ROOT=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Ours']['pcd_root'])")
-        PCD_FOLD=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Ours']['pcd_fold'])")
-        OUTPUT_FOLDER=$(python3 -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Ours']['output_folder'])")
+        PCD_ROOT=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Ours']['pcd_root'])")
+        PCD_FOLD=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Ours']['pcd_fold'])")
+        OUTPUT_FOLDER=$(python -c "import json; print(json.load(open('$METHOD_CONFIG_FILE'))['Ours']['output_folder'])")
         ;;
     *)
         echo "❌ Invalid method selection"
@@ -127,7 +127,11 @@ echo "  Projection: Parallel (Fixed)"
 echo ""
 
 # Run Python script
-python3 vis_occ_glob.py "$PCD_ROOT" "$PCD_FOLD" "${PCD_SCENES[scene_idx]}" "${PCD_NAMES[name_idx]}" "$PCD_EXT" "$OUTPUT_FOLDER" "$show_3d" "$use_zoom"
+if [[ "$(uname)" == "Darwin" && -n "${CONDA_PREFIX:-}" ]]; then
+    export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+fi
+
+python vis_occ_glob.py "$PCD_ROOT" "$PCD_FOLD" "${PCD_SCENES[scene_idx]}" "${PCD_NAMES[name_idx]}" "$PCD_EXT" "$OUTPUT_FOLDER" "$show_3d" "$use_zoom"
 
 echo ""
 echo "✅ Done!"

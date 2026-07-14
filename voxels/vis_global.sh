@@ -100,8 +100,8 @@ process_scene() {
     done
     
     # Run Python script
-    echo "执行命令: python3 vis_global.py $cmd_args"
-    eval "python3 vis_global.py $cmd_args"
+    echo "执行命令: python vis_global.py $cmd_args"
+    eval "python vis_global.py $cmd_args"
     
     if [ $? -eq 0 ]; then
         echo "✓ 场景 $scene_name 处理完成"

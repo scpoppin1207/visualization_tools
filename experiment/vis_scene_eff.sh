@@ -32,7 +32,7 @@ echo "✅ EmbodiedOcc: Fixed baseline at $EMBODIEDOCC_ANCHORS anchors"
 echo ""
 echo "🎯 Generating plots..."
 
-python3 vis_scene_eff.py \
+python vis_scene_eff.py \
     --configs "${CONFIGS[@]}" \
     --embodiedocc-anchors $EMBODIEDOCC_ANCHORS \
     --output "effect/anchor_comparison.png" \

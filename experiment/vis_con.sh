@@ -65,7 +65,7 @@ if [ "$SAVE_CONFIDENCE_COLORED" = true ]; then
 fi
 
 # Run Python script
-eval "python3 vis_con.py $CMD_ARGS"
+eval "python vis_con.py $CMD_ARGS"
 
 # Check if script executed successfully
 if [ $? -eq 0 ]; then

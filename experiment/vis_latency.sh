@@ -17,7 +17,7 @@ echo "📋 Available configurations in $CONFIG_FILE:"
 echo ""
 
 # Extract config names using Python
-config_names=($(python3 -c "
+config_names=($(python -c "
 import json
 with open('$CONFIG_FILE', 'r') as f:
     configs = json.load(f)
@@ -44,7 +44,7 @@ echo "🚀 Generating latency vs mIoU plot for: $CONFIG_NAME"
 echo ""
 
 # Run Python script
-python3 vis_latency.py \
+python vis_latency.py \
     --config "$CONFIG_NAME" \
     --figsize 10 10 \
     --dpi 600

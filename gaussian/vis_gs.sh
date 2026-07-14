@@ -5,9 +5,9 @@
  
 # Configuration parameters
 # modify to your path
-PLY_ROOT="/media/made/MyPassport/DATASET/ScanNet++/outputs/occscannet/base"  # /media/made/MyPassport/DATASET/ScanNet++/outputs/occscannet/exp/base
-PLY_FOLD="vis_occ_da_gaussian_cam"  # "vis_occ_da_gaussian_cam", "vis_occ_gaussian_cam", "vis_occ_pca_feat_2" 
-OUTPUT_FOLDER="vis_mitsuba_gs"  # "vis_occ_da_mitsuba_gs" 
+PLY_ROOT="../assets"  # /media/made/MyPassport/DATASET/ScanNet++/outputs/occscannet/exp/base
+PLY_FOLD="Gaussian"  # "vis_occ_da_gaussian_cam", "vis_occ_gaussian_cam", "vis_occ_pca_feat_2" 
+OUTPUT_FOLDER="../output/vis_gs"  # "vis_occ_da_mitsuba_gs" 
 MID_FOLDER="pred_cam" # "pred", "pca_feat_2", "pca_anchor" 
 PLY_EXT=".ply" 
 
@@ -111,19 +111,19 @@ mkdir -p "$PLY_ROOT/$OUTPUT_FOLDER/$MID_FOLDER"
 # Check Python environment and dependencies
 echo ""
 echo "Checking dependencies..." 
-python3 -c "import mitsuba as mi; print(f'Mitsuba version: {mi.__version__}')" 2>/dev/null
+python -c "import mitsuba as mi; print(f'Mitsuba version: {mi.__version__}')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Warning: Mitsuba not found or not properly installed"
     echo "Please install Mitsuba v3: pip install mitsuba"
 fi
 
-python3 -c "import plyfile; print('PLYfile: OK')" 2>/dev/null
+python -c "import plyfile; print('PLYfile: OK')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Warning: plyfile not found"
     echo "Please install: pip install plyfile"
 fi
 
-python3 -c "import tqdm; print('tqdm: OK')" 2>/dev/null
+python -c "import tqdm; print('tqdm: OK')" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "Warning: tqdm not found"
     echo "Please install: pip install tqdm"
@@ -181,7 +181,7 @@ for scene in "${SELECTED_SCENES[@]}"; do
         fi
         
         # Run Python script to render single file
-        python3 vis_gs.py \
+        python "$(dirname "$0")/vis_gs.py" \
             --input_file "$FULL_PLY_PATH" \
             --output_file "$OUTPUT_PATH" \
             --width $WIDTH \

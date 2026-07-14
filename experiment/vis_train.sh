@@ -18,11 +18,11 @@ fi
 
 # Get available models
 echo "📋 Available models:"
-MODELS=($(python3 -c "import json; config=json.load(open('$TRAIN_CONFIG_FILE')); print(' '.join(config.keys()))"))
+MODELS=($(python -c "import json; config=json.load(open('$TRAIN_CONFIG_FILE')); print(' '.join(config.keys()))"))
 
 for i in "${!MODELS[@]}"; do
     model_name="${MODELS[$i]}"
-    desc=$(python3 -c "import json; config=json.load(open('$TRAIN_CONFIG_FILE')); print(config['$model_name'].get('description', 'No description'))")
+    desc=$(python -c "import json; config=json.load(open('$TRAIN_CONFIG_FILE')); print(config['$model_name'].get('description', 'No description'))")
     echo "  $((i+1)). $model_name - $desc"
 done
 
@@ -39,22 +39,22 @@ echo "✅ Selected model: $SELECTED_MODEL"
 echo ""
 
 # Extract configuration directly from JSON
-OUTPUT_FOLDER=$(python3 -c "import json; print(json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['output_folder'])")
-LOG_FORMAT_JSON=$(python3 -c "import json; print(json.dumps(json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL'].get('log_format', 'tgsformer')))")
-FRAMES_PER_ITER=($(python3 -c "import json; print(' '.join(map(str, json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['frames_per_iter'])))"))
+OUTPUT_FOLDER=$(python -c "import json; print(json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['output_folder'])")
+LOG_FORMAT_JSON=$(python -c "import json; print(json.dumps(json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL'].get('log_format', 'tgsformer')))")
+FRAMES_PER_ITER=($(python -c "import json; print(' '.join(map(str, json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['frames_per_iter'])))"))
 
 # Get log names
-LOG_NAMES=($(python3 -c "import json; print(' '.join(json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['logs'].keys()))"))
+LOG_NAMES=($(python -c "import json; print(' '.join(json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['logs'].keys()))"))
 
 # Build configs array and validate
 echo "🔍 Checking log files..."
 CONFIGS=()
 for log_name in "${LOG_NAMES[@]}"; do
     # Get log info (could be string or dict)
-    LOG_INFO=$(python3 -c "import json; info=json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['logs']['$log_name']; print(json.dumps(info) if isinstance(info, dict) else info)")
+    LOG_INFO=$(python -c "import json; info=json.load(open('$TRAIN_CONFIG_FILE'))['$SELECTED_MODEL']['logs']['$log_name']; print(json.dumps(info) if isinstance(info, dict) else info)")
     
     # Extract path
-    LOG_PATH=$(python3 -c "import json; info=json.loads('$LOG_INFO') if '$LOG_INFO'.startswith('{') else '$LOG_INFO'; print(info.get('path', info) if isinstance(info, dict) else info)")
+    LOG_PATH=$(python -c "import json; info=json.loads('$LOG_INFO') if '$LOG_INFO'.startswith('{') else '$LOG_INFO'; print(info.get('path', info) if isinstance(info, dict) else info)")
     
     if [ ! -f "$LOG_PATH" ]; then
         echo "❌ Missing log: $LOG_PATH"
@@ -77,7 +77,7 @@ echo "   Frames per iter: ${FRAMES_PER_ITER[@]}"
 echo ""
 
 # Note: sequences process 30 frames/iter, mono processes 1 frame/iter
-python3 vis_train.py \
+python vis_train.py \
     --configs "${CONFIGS[@]}" \
     --output "$OUTPUT_FOLDER/loss_comparison.png" \
     --figsize 20 10 \
