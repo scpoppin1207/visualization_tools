@@ -36,8 +36,8 @@ class MayaviModel(HasTraits):
         Item(
             "scene",
             editor=SceneEditor(scene_class=MayaviScene),
-            height=500,
-            width=700,
+            height=360,
+            width=420,
             show_label=False,
         ),
         resizable=True,
@@ -53,6 +53,137 @@ class MayaviModel(HasTraits):
         if self._ready_callback is not None and not self._ready_emitted:
             self._ready_emitted = True
             QtCore.QTimer.singleShot(0, self._ready_callback)
+
+
+class ElidedLabel(QtWidgets.QLabel):
+    """Label that keeps long paths/status text from forcing a wide pane."""
+
+    def __init__(self, text="", parent=None, mode=QtCore.Qt.ElideMiddle):
+        super().__init__(parent)
+        self._full_text = ""
+        self._elide_mode = mode
+        self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred)
+        self.setText(text)
+
+    def setText(self, text):
+        self._full_text = str(text)
+        self._update_elided_text()
+
+    def fullText(self):
+        return self._full_text
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_elided_text()
+
+    def _update_elided_text(self):
+        width = max(self.contentsRect().width(), 20)
+        shown = self.fontMetrics().elidedText(self._full_text, self._elide_mode, width)
+        QtWidgets.QLabel.setText(self, shown)
+
+
+class ResponsiveTabWidget(QtWidgets.QTabWidget):
+    """Tab widget with a deliberately small splitter constraint."""
+
+    def minimumSizeHint(self):
+        return QtCore.QSize(330, 280)
+
+    def sizeHint(self):
+        return QtCore.QSize(620, 640)
+
+
+class ComparisonSplitterHandle(QtWidgets.QSplitterHandle):
+    """Visible draggable divider for the comparison panes."""
+
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+        self._hovered = False
+        self._dragging = False
+        self._press_offset = 0
+        self._pending_position = None
+        self.setCursor(QtCore.Qt.SplitHCursor)
+        self.setToolTip("拖动预览分隔位置，松开后应用宽度")
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() != QtCore.Qt.LeftButton:
+            super().mousePressEvent(event)
+            return
+        self._dragging = True
+        self._press_offset = event.pos().x()
+        self._pending_position = self.pos().x()
+        self.splitter().setRubberBand(self._pending_position)
+        self.grabMouse()
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        if not self._dragging:
+            super().mouseMoveEvent(event)
+            return
+        splitter = self.splitter()
+        handle_index = self._handle_index()
+        parent_pos = splitter.mapFromGlobal(event.globalPos())
+        requested = parent_pos.x() - self._press_offset
+        minimum, maximum = splitter.getRange(handle_index)
+        self._pending_position = max(minimum, min(maximum, requested))
+        splitter.setRubberBand(self._pending_position)
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == QtCore.Qt.LeftButton and self._dragging:
+            self._dragging = False
+            self.releaseMouse()
+            splitter = self.splitter()
+            splitter.setRubberBand(-1)
+            if self._pending_position is not None:
+                splitter.moveSplitter(self._pending_position, self._handle_index())
+            self._pending_position = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _handle_index(self):
+        splitter = self.splitter()
+        for index in range(1, splitter.count()):
+            if splitter.handle(index) is self:
+                return index
+        return 1
+
+    def paintEvent(self, event):
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+        painter.fillRect(self.rect(), QtGui.QColor("#9eb4d1" if self._hovered else "#c5d1e1"))
+
+        center = self.rect().center()
+        painter.setPen(QtGui.QPen(QtGui.QColor("#446b9b"), 1.5))
+        painter.drawLine(center.x(), center.y() - 25, center.x(), center.y() + 25)
+        painter.setBrush(QtGui.QColor("#446b9b"))
+        painter.setPen(QtCore.Qt.NoPen)
+        for offset in (-10, 0, 10):
+            painter.drawEllipse(QtCore.QPoint(center.x(), center.y() + offset), 2, 2)
+
+
+class ComparisonSplitter(QtWidgets.QSplitter):
+    """Horizontal splitter that resizes both live Mayavi panes continuously."""
+
+    def __init__(self, parent=None):
+        super().__init__(QtCore.Qt.Horizontal, parent)
+        self.setHandleWidth(11)
+        # VTK/OpenGL resizing is expensive. Preview with a rubber band and
+        # resize both render windows only once when the mouse is released.
+        self.setOpaqueResize(False)
+
+    def createHandle(self):
+        return ComparisonSplitterHandle(self.orientation(), self)
 
 
 class DropPanel(QtWidgets.QFrame):
@@ -123,6 +254,7 @@ class ViewerTab(QtWidgets.QWidget):
         self.ply_path = ply_path.resolve()
         self._centers = None
         self._rendered = False
+        self._compact = False
         self._build_ui()
 
         self.model = MayaviModel(ready_callback=self.render_voxels)
@@ -130,18 +262,30 @@ class ViewerTab(QtWidgets.QWidget):
         self.scene_layout.addWidget(self.traits_ui.control)
 
     def _build_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 14)
-        layout.setSpacing(10)
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(14, 12, 14, 14)
+        self.main_layout.setSpacing(9)
+
+        heading = QtWidgets.QHBoxLayout()
+        self.name_label = ElidedLabel(self.ply_path.name, mode=QtCore.Qt.ElideRight)
+        self.name_label.setObjectName("viewerTitle")
+        self.name_label.setToolTip(str(self.ply_path))
+        self.path_label = ElidedLabel(str(self.ply_path))
+        self.path_label.setObjectName("pathLabel")
+        self.path_label.setToolTip(str(self.ply_path))
+        heading.addWidget(self.name_label, 1)
+        heading.addWidget(self.path_label, 2)
+        self.main_layout.addLayout(heading)
 
         controls = QtWidgets.QHBoxLayout()
-        name = QtWidgets.QLabel(self.ply_path.name)
-        name.setObjectName("viewerTitle")
-        name.setToolTip(str(self.ply_path))
-        controls.addWidget(name)
+        controls.setSpacing(8)
+        self.status_label = ElidedLabel("正在初始化 Mayavi 场景…", mode=QtCore.Qt.ElideRight)
+        self.status_label.setObjectName("muted")
+        controls.addWidget(self.status_label, 1)
         controls.addStretch(1)
 
-        controls.addWidget(QtWidgets.QLabel("Voxel size"))
+        self.voxel_caption = QtWidgets.QLabel("Voxel size")
+        controls.addWidget(self.voxel_caption)
         self.voxel_size = QtWidgets.QDoubleSpinBox()
         self.voxel_size.setDecimals(3)
         self.voxel_size.setRange(0.005, 2.0)
@@ -150,33 +294,39 @@ class ViewerTab(QtWidgets.QWidget):
         self.voxel_size.setToolTip("修改后点击“重新生成”")
         controls.addWidget(self.voxel_size)
 
-        rerender = QtWidgets.QPushButton("重新生成")
-        rerender.clicked.connect(self.render_voxels)
-        reset = QtWidgets.QPushButton("重置视角")
-        reset.clicked.connect(self.reset_camera)
-        save = QtWidgets.QPushButton("保存截图")
-        save.clicked.connect(self.save_screenshot)
-        controls.addWidget(rerender)
-        controls.addWidget(reset)
-        controls.addWidget(save)
-        layout.addLayout(controls)
-
-        info = QtWidgets.QHBoxLayout()
-        self.status_label = QtWidgets.QLabel("正在初始化 Mayavi 场景…")
-        self.status_label.setObjectName("muted")
-        self.path_label = QtWidgets.QLabel(str(self.ply_path))
-        self.path_label.setObjectName("pathLabel")
-        self.path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        info.addWidget(self.status_label)
-        info.addStretch(1)
-        info.addWidget(self.path_label, 1)
-        layout.addLayout(info)
+        self.rerender_button = QtWidgets.QPushButton("重新生成")
+        self.rerender_button.setObjectName("viewerActionButton")
+        self.rerender_button.clicked.connect(self.render_voxels)
+        self.reset_button = QtWidgets.QPushButton("重置视角")
+        self.reset_button.setObjectName("viewerActionButton")
+        self.reset_button.clicked.connect(self.reset_camera)
+        self.save_button = QtWidgets.QPushButton("保存截图")
+        self.save_button.setObjectName("viewerActionButton")
+        self.save_button.clicked.connect(self.save_screenshot)
+        controls.addWidget(self.rerender_button)
+        controls.addWidget(self.reset_button)
+        controls.addWidget(self.save_button)
+        self.main_layout.addLayout(controls)
 
         self.scene_host = QtWidgets.QFrame()
         self.scene_host.setObjectName("sceneHost")
         self.scene_layout = QtWidgets.QVBoxLayout(self.scene_host)
         self.scene_layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.scene_host, 1)
+        self.main_layout.addWidget(self.scene_host, 1)
+
+    def set_compact_mode(self, compact):
+        self._compact = bool(compact)
+        self.setProperty("compact", self._compact)
+        self.voxel_caption.setText("Voxel" if compact else "Voxel size")
+        self.rerender_button.setText("重绘" if compact else "重新生成")
+        self.reset_button.setText("重置" if compact else "重置视角")
+        self.save_button.setText("截图" if compact else "保存截图")
+        self.path_label.setVisible(not compact)
+        margins = (8, 8, 8, 9) if compact else (14, 12, 14, 14)
+        self.main_layout.setContentsMargins(*margins)
+        self.main_layout.setSpacing(6 if compact else 9)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def render_voxels(self):
         if not hasattr(self, "model"):
@@ -330,18 +480,54 @@ class MainWindow(QtWidgets.QMainWindow):
         home_action = header.addAction("使用说明")
         home_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon))
         home_action.triggered.connect(self.show_welcome)
+        header.addSeparator()
+        self.split_action = header.addAction("分屏对比")
+        self.split_action.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarNormalButton)
+        )
+        self.split_action.setCheckable(True)
+        self.split_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+S"))
+        self.split_action.toggled.connect(self.set_split_enabled)
 
-        self.tabs = QtWidgets.QTabWidget()
-        self.tabs.setDocumentMode(True)
-        self.tabs.setTabsClosable(True)
-        self.tabs.setMovable(True)
-        self.tabs.tabCloseRequested.connect(self.close_tab)
-        self.setCentralWidget(self.tabs)
+        self.splitter = ComparisonSplitter()
+        self.splitter.setObjectName("viewerSplitter")
+        self.splitter.setChildrenCollapsible(False)
+
+        self.tabs = self._create_tab_widget("leftTabs")
+        self.right_tabs = self._create_tab_widget("rightTabs")
+        self.right_tabs.hide()
+        self.splitter.addWidget(self.tabs)
+        self.splitter.addWidget(self.right_tabs)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 1)
+        self.setCentralWidget(self.splitter)
+
+        self.move_right_button = QtWidgets.QPushButton("在右侧打开  →")
+        self.move_right_button.setObjectName("paneMoveButton")
+        self.move_right_button.clicked.connect(self.open_current_in_right)
+        self.move_right_button.hide()
+        self.tabs.setCornerWidget(self.move_right_button, QtCore.Qt.TopRightCorner)
+
+        self.right_pane_label = QtWidgets.QLabel("右侧对比区")
+        self.right_pane_label.setObjectName("rightPaneLabel")
+        self.right_pane_label.hide()
+        self.right_tabs.setCornerWidget(self.right_pane_label, QtCore.Qt.TopRightCorner)
+
         self.welcome_page = self._welcome_page()
         self.tabs.addTab(self.welcome_page, "开始")
         self.tabs.tabBar().setTabButton(0, QtWidgets.QTabBar.RightSide, None)
 
         self.statusBar().showMessage("准备就绪 · 拖入 PLY 或点击“打开 PLY”")
+
+    def _create_tab_widget(self, object_name):
+        tabs = ResponsiveTabWidget()
+        tabs.setObjectName(object_name)
+        tabs.setMinimumWidth(0)
+        tabs.setDocumentMode(True)
+        tabs.setTabsClosable(True)
+        tabs.setMovable(True)
+        tabs.tabCloseRequested.connect(lambda index, pane=tabs: self.close_tab(pane, index))
+        return tabs
 
     def _welcome_page(self):
         scroll = QtWidgets.QScrollArea()
@@ -402,11 +588,12 @@ class MainWindow(QtWidgets.QMainWindow):
             "操作提示\n"
             "① 从资源管理器拖入一个或多个 .ply；或复制文件后在这里按 Ctrl+V。\n"
             "② 左键旋转、滚轮缩放、中键平移；不同文件会分别出现在标签页中。\n"
-            "③ PLY 需要包含 x/y/z，建议同时包含 red/green/blue；无颜色时显示为黑色。"
+            "③ 打开至少两个 PLY 后点击“分屏对比”，可将标签页放在左右两侧。\n"
+            "④ PLY 需要包含 x/y/z，建议同时包含 red/green/blue；无颜色时显示为黑色。"
         )
         guide.setObjectName("guideBox")
         guide.setWordWrap(True)
-        guide.setMinimumHeight(112)
+        guide.setMinimumHeight(136)
         layout.addWidget(guide)
         layout.addStretch(1)
         scroll.setWidget(page)
@@ -421,6 +608,91 @@ class MainWindow(QtWidgets.QMainWindow):
         index = self.tabs.indexOf(self.welcome_page)
         if index >= 0:
             self.tabs.setCurrentIndex(index)
+
+    def set_split_enabled(self, enabled):
+        if enabled:
+            viewer_indices = self._viewer_indices(self.tabs)
+            if len(viewer_indices) < 2:
+                self.split_action.blockSignals(True)
+                self.split_action.setChecked(False)
+                self.split_action.blockSignals(False)
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "需要至少两个 PLY",
+                    "请先打开至少两个 voxel PLY 标签页，再启用分屏对比。",
+                )
+                return
+
+            current_index = self.tabs.currentIndex()
+            if not isinstance(self.tabs.widget(current_index), ViewerTab):
+                current_index = viewer_indices[-1]
+
+            self.right_tabs.show()
+            self.move_right_button.show()
+            self.right_pane_label.show()
+
+            for index in viewer_indices:
+                self.tabs.widget(index).set_compact_mode(True)
+
+            source_viewer = self.tabs.widget(current_index)
+            self._add_viewer_tab(source_viewer.ply_path, self.right_tabs)
+
+            remaining = [index for index in viewer_indices if index != current_index]
+            if remaining:
+                self.tabs.setCurrentIndex(remaining[-1])
+            self.split_action.setText("退出分屏")
+            QtCore.QTimer.singleShot(
+                0,
+                lambda: self.splitter.setSizes(
+                    [max(self.splitter.width() // 2, 1)] * 2
+                ),
+            )
+            self.statusBar().showMessage(
+                "已启用分屏 · 左右标签页中的 Mayavi 场景可独立操作", 5000
+            )
+            return
+
+        self._merge_right_pane()
+
+    def _merge_right_pane(self):
+        while self.right_tabs.count():
+            widget = self.right_tabs.widget(0)
+            self.right_tabs.removeTab(0)
+            if isinstance(widget, ViewerTab):
+                widget.dispose()
+            widget.deleteLater()
+        self.right_tabs.hide()
+        self.move_right_button.hide()
+        self.right_pane_label.hide()
+        for index in self._viewer_indices(self.tabs):
+            self.tabs.widget(index).set_compact_mode(False)
+        self.split_action.setText("分屏对比")
+        self.statusBar().showMessage("已退出分屏，右侧对比区已关闭", 4000)
+
+    def open_current_in_right(self):
+        index = self.tabs.currentIndex()
+        viewer = self.tabs.widget(index)
+        if not isinstance(viewer, ViewerTab):
+            self.statusBar().showMessage("请先在左侧选择一个 voxel 标签页", 3500)
+            return
+
+        for right_index in self._viewer_indices(self.right_tabs):
+            right_viewer = self.right_tabs.widget(right_index)
+            if right_viewer.ply_path == viewer.ply_path:
+                self.right_tabs.setCurrentIndex(right_index)
+                self.statusBar().showMessage("该 PLY 已在右侧对比区中", 3000)
+                return
+
+        self._add_viewer_tab(viewer.ply_path, self.right_tabs)
+        self.statusBar().showMessage(f"已在右侧打开 {viewer.ply_path.name}", 4000)
+
+    @staticmethod
+    def _viewer_indices(tabs):
+        return [
+            index
+            for index in range(tabs.count())
+            if isinstance(tabs.widget(index), ViewerTab)
+        ]
 
     def choose_files(self):
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
@@ -463,24 +735,37 @@ class MainWindow(QtWidgets.QMainWindow):
         valid = _valid_ply_paths(paths)
         invalid_count = len(paths) - len(valid)
         for path in valid:
-            viewer = ViewerTab(path)
-            viewer.message.connect(self.statusBar().showMessage)
-            index = self.tabs.addTab(viewer, path.stem)
-            self.tabs.setTabToolTip(index, str(path))
-            self.tabs.setCurrentIndex(index)
+            self._add_viewer_tab(path, self.tabs)
         if invalid_count:
             self.statusBar().showMessage(
                 f"已忽略 {invalid_count} 个不存在或非 .ply 的文件", 5000
             )
 
-    def close_tab(self, index):
-        if self.tabs.widget(index) is self.welcome_page:
+    def _add_viewer_tab(self, path, target_tabs):
+        viewer = ViewerTab(path)
+        if hasattr(self, "split_action") and self.split_action.isChecked():
+            viewer.set_compact_mode(True)
+        viewer.message.connect(self.statusBar().showMessage)
+        index = target_tabs.addTab(viewer, path.stem)
+        target_tabs.setTabToolTip(index, str(path))
+        target_tabs.setCurrentIndex(index)
+        return viewer
+
+    def close_tab(self, tabs, index):
+        if tabs.widget(index) is self.welcome_page:
             return
-        widget = self.tabs.widget(index)
-        self.tabs.removeTab(index)
+        widget = tabs.widget(index)
+        tabs.removeTab(index)
         if isinstance(widget, ViewerTab):
             widget.dispose()
         widget.deleteLater()
+
+        if (
+            self.split_action.isChecked()
+            and tabs is self.tabs
+            and not self._viewer_indices(self.tabs)
+        ):
+            self.split_action.setChecked(False)
 
     def dragEnterEvent(self, event):
         if _paths_from_mime(event.mimeData()):
@@ -493,10 +778,11 @@ class MainWindow(QtWidgets.QMainWindow):
             event.acceptProposedAction()
 
     def closeEvent(self, event):
-        for index in range(self.tabs.count()):
-            widget = self.tabs.widget(index)
-            if isinstance(widget, ViewerTab):
-                widget.dispose()
+        for tabs in (self.tabs, self.right_tabs):
+            for index in range(tabs.count()):
+                widget = tabs.widget(index)
+                if isinstance(widget, ViewerTab):
+                    widget.dispose()
         super().closeEvent(event)
 
 
@@ -545,12 +831,18 @@ QLabel#dropTitle { font-size: 21px; font-weight: 600; color: #243b67; }
 QLabel#muted { color: #64748b; }
 QLabel#guideBox { background: #eef4fc; border: 1px solid #d4e1f2; border-radius: 9px; padding: 18px; color: #334a68; font-size: 15px; }
 QLabel#viewerTitle { font-size: 19px; font-weight: 600; color: #1e3a5f; }
-QLabel#pathLabel { color: #7b8798; }
+QLabel#pathLabel { color: #7b8798; font-size: 13px; }
 QFrame#sceneHost { background: #f5f7fb; border: 1px solid #d7dee9; border-radius: 8px; }
+QFrame#sceneHost QToolBar { min-height: 32px; padding: 3px 4px; spacing: 2px; }
+QFrame#sceneHost QToolBar QToolButton { min-width: 22px; max-width: 28px; min-height: 24px; max-height: 28px; padding: 1px 2px; }
 QTabWidget::pane { border: none; }
 QTabBar::tab { background: #e4eaf2; padding: 12px 20px; min-width: 72px; margin-right: 3px; border-top-left-radius: 6px; border-top-right-radius: 6px; }
 QTabBar::tab:hover { background: #edf2f8; }
 QTabBar::tab:selected { background: #ffffff; color: #1d4ed8; font-weight: 600; }
+QPushButton#paneMoveButton { padding: 6px 11px; min-height: 22px; margin: 3px 6px; color: #315783; }
+QLabel#rightPaneLabel { color: #5c7290; font-weight: 600; padding: 8px 12px; }
+ViewerTab[compact="true"] QPushButton#viewerActionButton { padding: 6px 9px; min-height: 22px; font-size: 14px; }
+ViewerTab[compact="true"] QDoubleSpinBox { min-width: 64px; padding: 5px; }
 QStatusBar { background: #ffffff; border-top: 1px solid #dfe5ee; color: #52627a; min-height: 28px; }
 QDoubleSpinBox { background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px; min-height: 24px; min-width: 76px; }
 QScrollBar:vertical { background: #edf1f6; width: 12px; margin: 2px; border-radius: 6px; }
