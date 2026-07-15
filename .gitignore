@@ -40,3 +40,6 @@ Thumbs.db
 /output
 /eval
 /eval_png
+
+# Vox Viewer local imports
+/vox_viewer/imports/
