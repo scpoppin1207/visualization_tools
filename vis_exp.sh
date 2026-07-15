@@ -8,8 +8,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── User configuration ──────────────────────────────────────────────────────
-EXP_DIR="/data/exp/embodied/vis/epoch_3"        # Single epoch root (contains vox/, gs/)
-OUTPUT_DIR="/data/exp/embodied/vis_render/epoch_3"
+EXP_DIR="./eval/embodied/base/train_embodied_base/epoch_10/vis/epoch_10"        # Single epoch root (contains vox/, gs/)
+OUTPUT_DIR="./eval_png/embodied/base/train_embodied_base/epoch_10/"
 MODE="embodied"                                  # embodied | mono
 VIS_DUAL=false                                   # true if experiment used vis_dual
 SCENES=()                                        # Empty = all scenes; e.g. SCENES=("scene0000_00")
@@ -77,6 +77,14 @@ run_vox() {
     if [[ "$(uname)" == "Darwin" && -n "${CONDA_PREFIX:-}" ]]; then
         export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
     fi
+
+    # Offscreen Mayavi: set env before Python starts so Qt never opens interactive windows.
+    if [[ "$(uname)" == "Darwin" ]]; then
+        export ETS_TOOLKIT=qt
+    else
+        export ETS_TOOLKIT=qt4
+    fi
+    export QT_API=pyqt5
 
     local vox_args=("${PY_ARGS[@]}" --tasks vox)
     if [[ "$(uname)" == "Linux" ]] && command -v xvfb-run &>/dev/null; then

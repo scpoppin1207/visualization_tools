@@ -38,3 +38,5 @@ Thumbs.db
 # *.mp4
 # *.avi
 /output
+/eval
+/eval_png

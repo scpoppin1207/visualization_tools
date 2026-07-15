@@ -2,15 +2,121 @@
 """Voxel occupancy visualization using Open3D and Mayavi."""
 
 import os
+import sys
 
 import numpy as np
 import open3d as o3d
-from mayavi import mlab
 from pathlib import Path
 
 from utils.camera import get_camera_params, load_camera_config
 from utils.image import remove_white_background
 from utils.paths import config_path
+
+_mlab = None
+_OFFSCREEN = False
+_HEADLESS_PATCHED = False
+_HEADLESS_WINDOW_SIZE = (1, 1)
+_HEADLESS_WINDOW_POS = (0, 0)
+
+
+def get_mlab():
+    """Return the Mayavi mlab module (lazy import after env setup)."""
+    global _mlab
+    if _mlab is None:
+        from mayavi import mlab
+
+        _mlab = mlab
+    return _mlab
+
+
+def _shrink_qt_window(control):
+    """Keep Mayavi/Qt windows invisible: prefer never showing, else use 1x1 off-screen."""
+    if control is None:
+        return
+
+    try:
+        from pyface.qt import QtCore
+
+        control.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
+        control.setWindowFlags(
+            control.windowFlags()
+            | QtCore.Qt.Tool
+            | QtCore.Qt.FramelessWindowHint
+        )
+    except Exception:
+        QtCore = None
+
+    width, height = _HEADLESS_WINDOW_SIZE
+    x, y = _HEADLESS_WINDOW_POS
+    control.setFixedSize(width, height)
+    control.move(x, y)
+    control.setVisible(False)
+    control.hide()
+
+
+def _install_headless_mayavi():
+    """Patch Mayavi viewer creation so batch mode never opens full-size windows."""
+    global _HEADLESS_PATCHED
+    if _HEADLESS_PATCHED:
+        return
+    _HEADLESS_PATCHED = True
+
+    import mayavi.core.ui.mayavi_scene as mayavi_scene
+
+    def _silent_open(self):
+        if self.control is None:
+            self.create()
+        _shrink_qt_window(self.control)
+        return self.control is not None
+
+    mayavi_scene.MayaviViewer.open = _silent_open
+
+    def _headless_viewer_factory(size=(400, 350)):
+        viewer = mayavi_scene.MayaviViewer()
+        viewer.menu_bar_manager = None
+        viewer.size = _HEADLESS_WINDOW_SIZE
+        viewer.position = _HEADLESS_WINDOW_POS
+        viewer.visible = False
+        viewer.open()
+        return viewer
+
+    mayavi_scene.viewer_factory = _headless_viewer_factory
+
+    try:
+        import mayavi.core.engine as engine_mod
+
+        engine_mod.viewer_factory = _headless_viewer_factory
+    except ImportError:
+        pass
+
+
+def _suppress_mayavi_ui(fig):
+    """Hide Mayavi/Qt windows for batch rendering without blocking the desktop."""
+    scene = fig.scene
+    scene.off_screen_rendering = True
+    if scene._renwin is not None:
+        scene._renwin.show_window = False
+
+    control = getattr(scene, "control", None)
+    _shrink_qt_window(control)
+
+    try:
+        from mayavi.core.registry import registry
+
+        engine = registry.find_scene_engine(fig)
+        for viewer in engine._viewer_ref.values():
+            _shrink_qt_window(getattr(viewer, "control", None))
+    except Exception:
+        pass
+
+
+def _create_figure(size, bgcolor=(1.0, 1.0, 1.0)):
+    """Create a Mayavi figure, suppressing UI when batch offscreen mode is active."""
+    mlab = get_mlab()
+    fig = mlab.figure(size=tuple(size), bgcolor=bgcolor)
+    if _OFFSCREEN:
+        _suppress_mayavi_ui(fig)
+    return fig
 
 
 class VoxelVisualizer:
@@ -32,8 +138,19 @@ class VoxelVisualizer:
     @staticmethod
     def setup_mayavi_env(offscreen=False):
         """Configure Mayavi/Qt environment."""
-        os.environ["ETS_TOOLKIT"] = "qt4" if offscreen else "qt"
+        global _OFFSCREEN
+        _OFFSCREEN = offscreen
         os.environ["QT_API"] = "pyqt5"
+        if offscreen:
+            _install_headless_mayavi()
+            # macOS segfaults with mlab.options.offscreen; hide Qt windows instead.
+            if sys.platform == "darwin":
+                os.environ["ETS_TOOLKIT"] = "qt"
+            else:
+                os.environ["ETS_TOOLKIT"] = "qt4"
+                get_mlab().options.offscreen = True
+        else:
+            os.environ["ETS_TOOLKIT"] = "qt"
 
     def load_camera_config(self, config_path=None):
         """Load camera configuration from JSON."""
@@ -55,6 +172,7 @@ class VoxelVisualizer:
 
     def setup_camera_view(self, voxel_centers, camera_params, azimuth=None):
         """Setup Mayavi camera view for static rendering."""
+        mlab = get_mlab()
         min_bounds = np.min(voxel_centers, axis=0)
         max_bounds = np.max(voxel_centers, axis=0)
         center = (min_bounds + max_bounds) / 2
@@ -100,6 +218,14 @@ class VoxelVisualizer:
 
         print(f"[INFO] Loaded {points.shape[0]} points from {pcd_path}")
 
+        if points.size == 0:
+            raise ValueError(f"Empty or unreadable point cloud: {pcd_path}")
+
+        if colors.size == 0:
+            colors = np.zeros((points.shape[0], 3), dtype=np.float64)
+        elif colors.ndim == 1:
+            colors = np.tile(colors.reshape(1, -1), (points.shape[0], 1))
+
         colors = (colors * 255).astype(np.uint8)
         voxel_coords = np.floor(points / self.voxel_size).astype(int)
 
@@ -127,6 +253,9 @@ class VoxelVisualizer:
             all_voxel_centers.append(center)
 
         all_voxel_centers = np.array(all_voxel_centers)
+        if all_voxel_centers.size == 0:
+            raise ValueError(f"No voxels produced from point cloud: {pcd_path}")
+
         actual_center = np.mean(all_voxel_centers, axis=0)
         print(
             f"[INFO] Actual voxel center: "
@@ -137,6 +266,7 @@ class VoxelVisualizer:
 
     def _render_voxel_groups(self, color_groups, all_voxel_centers):
         """Draw grouped voxels in the current Mayavi figure."""
+        mlab = get_mlab()
         for color_rgb, centers in color_groups.items():
             centers = np.array(centers)
             color_normalized = np.array(color_rgb) / 255.0
@@ -188,12 +318,13 @@ class VoxelVisualizer:
         remove_background=True,
     ):
         """Visualize voxelized point cloud with original colors."""
+        mlab = get_mlab()
         color_groups, all_voxel_centers = self._load_and_voxelize(pcd_path)
 
         if image_size is None:
             image_size = self._default_image_size()
 
-        mlab.figure(size=tuple(image_size), bgcolor=(1.0, 1.0, 1.0))
+        _create_figure(image_size, bgcolor=(1.0, 1.0, 1.0))
         print(f"[INFO] Figure size: {image_size[0]}x{image_size[1]}")
 
         self._render_voxel_groups(color_groups, all_voxel_centers)
@@ -227,6 +358,7 @@ class VoxelVisualizer:
         end_angle=360,
     ):
         """Generate rotating visualization frames."""
+        mlab = get_mlab()
         color_groups, all_voxel_centers = self._load_and_voxelize(pcd_path)
 
         if image_size is None:
@@ -247,7 +379,7 @@ class VoxelVisualizer:
         angles = np.linspace(start_angle, end_angle, num_frames, endpoint=False)
 
         for frame_idx, azimuth in enumerate(angles):
-            mlab.figure(size=tuple(image_size), bgcolor=(1.0, 1.0, 1.0))
+            _create_figure(image_size, bgcolor=(1.0, 1.0, 1.0))
             self._render_voxel_groups(color_groups, all_voxel_centers)
             self.setup_camera_view(all_voxel_centers, camera_params, azimuth=azimuth)
 

@@ -7,7 +7,7 @@ import traceback
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 try:
     from tqdm import tqdm
@@ -65,8 +65,25 @@ def _scene_allowed(scene: str, scenes: Optional[Set[str]]) -> bool:
     return scenes is None or scene in scenes
 
 
-def _add_task(tasks: List[RenderTask], ply_path: Path, exp_dir: Path, out_dir: Path, **meta) -> None:
+def _is_nonempty_ply(ply_path: Path) -> bool:
+    try:
+        return ply_path.is_file() and ply_path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _add_task(
+    tasks: List[RenderTask],
+    ply_path: Path,
+    exp_dir: Path,
+    out_dir: Path,
+    skipped_empty: List[str],
+    **meta,
+) -> None:
     if not ply_path.is_file():
+        return
+    if not _is_nonempty_ply(ply_path):
+        skipped_empty.append(str(ply_path))
         return
     tasks.append(
         RenderTask(
@@ -85,6 +102,7 @@ def _collect_vox_frame_tasks(
     scene: str,
     frame: str,
     vis_dual: bool,
+    skipped_empty: List[str],
 ) -> None:
     for name in VOX_LOCAL_NAMES:
         _add_task(
@@ -92,6 +110,7 @@ def _collect_vox_frame_tasks(
             frame_dir / f"{name}.ply",
             exp_dir,
             out_dir,
+            skipped_empty,
             task_type="vox",
             view_mode="local",
             scene=scene,
@@ -103,6 +122,7 @@ def _collect_vox_frame_tasks(
             frame_dir / f"{VOX_DUAL_EXTRA[0]}.ply",
             exp_dir,
             out_dir,
+            skipped_empty,
             task_type="vox",
             view_mode="local",
             scene=scene,
@@ -115,6 +135,7 @@ def collect_vox_tasks_embodied(
     out_dir: Path,
     vis_dual: bool,
     scenes: Optional[Set[str]],
+    skipped_empty: List[str],
 ) -> List[RenderTask]:
     tasks: List[RenderTask] = []
     vox_root = exp_dir / "vox"
@@ -135,6 +156,7 @@ def collect_vox_tasks_embodied(
                     scene_dir / f"{name}.ply",
                     exp_dir,
                     out_dir,
+                    skipped_empty,
                     task_type="vox",
                     view_mode="global",
                     scene=scene,
@@ -153,7 +175,7 @@ def collect_vox_tasks_embodied(
                     continue
                 frame = frame_dir.name
                 _collect_vox_frame_tasks(
-                    tasks, frame_dir, exp_dir, out_dir, scene, frame, vis_dual
+                    tasks, frame_dir, exp_dir, out_dir, scene, frame, vis_dual, skipped_empty
                 )
 
     return tasks
@@ -164,6 +186,7 @@ def collect_vox_tasks_mono(
     out_dir: Path,
     vis_dual: bool,
     scenes: Optional[Set[str]],
+    skipped_empty: List[str],
 ) -> List[RenderTask]:
     """Mono layout: vox/{scene}/{frame}/{pred,gt,...}.ply (no global/local level)."""
     tasks: List[RenderTask] = []
@@ -181,7 +204,7 @@ def collect_vox_tasks_mono(
             if not frame_dir.is_dir():
                 continue
             _collect_vox_frame_tasks(
-                tasks, frame_dir, exp_dir, out_dir, scene, frame_dir.name, vis_dual
+                tasks, frame_dir, exp_dir, out_dir, scene, frame_dir.name, vis_dual, skipped_empty
             )
 
     return tasks
@@ -192,11 +215,12 @@ def collect_vox_tasks(
     out_dir: Path,
     vis_dual: bool,
     scenes: Optional[Set[str]],
+    skipped_empty: List[str],
     mode: str = "embodied",
 ) -> List[RenderTask]:
     if mode == "mono":
-        return collect_vox_tasks_mono(exp_dir, out_dir, vis_dual, scenes)
-    return collect_vox_tasks_embodied(exp_dir, out_dir, vis_dual, scenes)
+        return collect_vox_tasks_mono(exp_dir, out_dir, vis_dual, scenes, skipped_empty)
+    return collect_vox_tasks_embodied(exp_dir, out_dir, vis_dual, scenes, skipped_empty)
 
 
 def _collect_gs_local_frame_tasks(
@@ -206,6 +230,7 @@ def _collect_gs_local_frame_tasks(
     out_dir: Path,
     scene: str,
     frame: str,
+    skipped_empty: List[str],
 ) -> None:
     if (frame_dir / "before_dual").is_dir():
         for stage in GS_DUAL_STAGES:
@@ -219,6 +244,7 @@ def _collect_gs_local_frame_tasks(
                         stream_dir / f"{name}.ply",
                         exp_dir,
                         out_dir,
+                        skipped_empty,
                         task_type="gs",
                         view_mode="local",
                         scene=scene,
@@ -231,6 +257,7 @@ def _collect_gs_local_frame_tasks(
                 frame_dir / f"{name}.ply",
                 exp_dir,
                 out_dir,
+                skipped_empty,
                 task_type="gs",
                 view_mode="local",
                 scene=scene,
@@ -242,6 +269,7 @@ def collect_gs_tasks_embodied(
     exp_dir: Path,
     out_dir: Path,
     scenes: Optional[Set[str]],
+    skipped_empty: List[str],
 ) -> List[RenderTask]:
     tasks: List[RenderTask] = []
     gs_root = exp_dir / "gs"
@@ -262,6 +290,7 @@ def collect_gs_tasks_embodied(
                     scene_dir / f"{name}.ply",
                     exp_dir,
                     out_dir,
+                    skipped_empty,
                     task_type="gs",
                     view_mode="global",
                     scene=scene,
@@ -279,7 +308,7 @@ def collect_gs_tasks_embodied(
                 if not frame_dir.is_dir():
                     continue
                 _collect_gs_local_frame_tasks(
-                    tasks, frame_dir, exp_dir, out_dir, scene, frame_dir.name
+                    tasks, frame_dir, exp_dir, out_dir, scene, frame_dir.name, skipped_empty
                 )
 
     return tasks
@@ -289,6 +318,7 @@ def collect_gs_tasks_mono(
     exp_dir: Path,
     out_dir: Path,
     scenes: Optional[Set[str]],
+    skipped_empty: List[str],
 ) -> List[RenderTask]:
     """Mono layout: gs/{scene}/{frame}/gs_*.ply (no global/local level)."""
     tasks: List[RenderTask] = []
@@ -306,7 +336,7 @@ def collect_gs_tasks_mono(
             if not frame_dir.is_dir():
                 continue
             _collect_gs_local_frame_tasks(
-                tasks, frame_dir, exp_dir, out_dir, scene, frame_dir.name
+                tasks, frame_dir, exp_dir, out_dir, scene, frame_dir.name, skipped_empty
             )
 
     return tasks
@@ -316,11 +346,12 @@ def collect_gs_tasks(
     exp_dir: Path,
     out_dir: Path,
     scenes: Optional[Set[str]],
+    skipped_empty: List[str],
     mode: str = "embodied",
 ) -> List[RenderTask]:
     if mode == "mono":
-        return collect_gs_tasks_mono(exp_dir, out_dir, scenes)
-    return collect_gs_tasks_embodied(exp_dir, out_dir, scenes)
+        return collect_gs_tasks_mono(exp_dir, out_dir, scenes, skipped_empty)
+    return collect_gs_tasks_embodied(exp_dir, out_dir, scenes, skipped_empty)
 
 
 def collect_tasks(
@@ -330,13 +361,14 @@ def collect_tasks(
     vis_dual: bool,
     scenes: Optional[Set[str]],
     mode: str = "embodied",
-) -> List[RenderTask]:
+) -> Tuple[List[RenderTask], List[str]]:
     tasks: List[RenderTask] = []
+    skipped_empty: List[str] = []
     if "vox" in task_types:
-        tasks.extend(collect_vox_tasks(exp_dir, out_dir, vis_dual, scenes, mode))
+        tasks.extend(collect_vox_tasks(exp_dir, out_dir, vis_dual, scenes, skipped_empty, mode))
     if "gs" in task_types:
-        tasks.extend(collect_gs_tasks(exp_dir, out_dir, scenes, mode))
-    return tasks
+        tasks.extend(collect_gs_tasks(exp_dir, out_dir, scenes, skipped_empty, mode))
+    return tasks, skipped_empty
 
 
 def group_tasks_by_scene_frame(tasks: List[RenderTask]) -> Dict[str, Dict[Optional[str], List[RenderTask]]]:
@@ -347,11 +379,10 @@ def group_tasks_by_scene_frame(tasks: List[RenderTask]) -> Dict[str, Dict[Option
 
 
 def run_vox_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
-    from mayavi import mlab
-
-    from source.voxel_visualizer import VoxelVisualizer
+    from source.voxel_visualizer import VoxelVisualizer, get_mlab
 
     VoxelVisualizer.setup_mayavi_env(offscreen=True)
+    mlab = get_mlab()
     failures: List[str] = []
     visualizers = {
         VoxelVisualizer.VIEW_GLOBAL: VoxelVisualizer(view_mode=VoxelVisualizer.VIEW_GLOBAL),
@@ -525,7 +556,11 @@ def main() -> int:
     scenes = set(args.scenes) if args.scenes else None
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    tasks = collect_tasks(exp_dir, out_dir, task_types, args.vis_dual, scenes, args.mode)
+    tasks, skipped_empty = collect_tasks(
+        exp_dir, out_dir, task_types, args.vis_dual, scenes, args.mode
+    )
+    if skipped_empty:
+        print(f"Skipped {len(skipped_empty)} empty PLY file(s).")
     if not tasks:
         print("No PLY files found to visualize.")
         return 0
@@ -556,6 +591,9 @@ def main() -> int:
         for msg in failures:
             print(f"  - {msg}")
         return 1
+
+    if skipped_empty:
+        print(f"\nNote: {len(skipped_empty)} empty PLY file(s) were skipped (0 bytes).")
 
     print("\nAll visualizations completed successfully.")
     return 0
