@@ -31,7 +31,7 @@ def main():
 
     visualizer = VoxelVisualizer(view_mode=VoxelVisualizer.VIEW_LOCAL)
     camera_params = visualizer.resolve_camera_params(pcd_scene, pcd_name, use_zoom)
-    image_size = camera_params.get("image_size", [1600, 1200])
+    image_size = camera_params.get("image_size", [800, 600])
     output_path = VoxelVisualizer.build_output_path(
         pcd_root, output_folder, pcd_scene, pcd_name,
         view_mode=VoxelVisualizer.VIEW_LOCAL, use_zoom=use_zoom,

@@ -118,7 +118,7 @@ class GaussianVisualizer:
             camera_params = self._default_camera_params(camera_preset)
 
         if render_params is None:
-            render_params = {"width": 1024, "height": 1024, "spp": 128}
+            render_params = {"width": 512, "height": 512, "spp": 128}
 
         scene_dict = {
             "type": "scene",
@@ -242,7 +242,7 @@ class GaussianVisualizer:
         self._ensure_mitsuba()
 
         if render_params is None:
-            render_params = {"width": 1024, "height": 1024, "spp": 128}
+            render_params = {"width": 512, "height": 512, "spp": 128}
 
         preset_label = "Bird's Eye View" if camera_preset == "global" else "Local"
         print(f"Creating Mitsuba scene ({preset_label})...")

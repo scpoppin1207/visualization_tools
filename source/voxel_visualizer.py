@@ -288,7 +288,7 @@ class VoxelVisualizer:
         )
 
     def _default_image_size(self):
-        return [1600, 1600] if self.view_mode == self.VIEW_GLOBAL else [1600, 1200]
+        return [800, 800] if self.view_mode == self.VIEW_GLOBAL else [800, 600]
 
     def _default_camera_params(self):
         if self.view_mode == self.VIEW_GLOBAL:
@@ -297,14 +297,14 @@ class VoxelVisualizer:
                 "elevation": 0,
                 "parallel_scale_factor": 0.6,
                 "center_offset": [0.0, 0.0, 0.0],
-                "image_size": [1600, 1600],
+                "image_size": [800, 800],
             }
         return {
             "azimuth": 75,
             "elevation": 50,
             "parallel_scale_factor": 0.5,
             "center_offset": [0.0, 0.0, 0.0],
-            "image_size": [1600, 1200],
+            "image_size": [800, 600],
         }
 
     def visualize(

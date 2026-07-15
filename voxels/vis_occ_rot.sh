@@ -138,8 +138,8 @@ if [ "$QUICK_MODE" = true ]; then
     num_frames=36
     start_angle=0
     end_angle=360
-    image_width=1600
-    echo "🎬 Rotation settings: Using defaults (36 frames, 0-360°, 1600px)"
+    image_width=800
+    echo "🎬 Rotation settings: Using defaults (36 frames, 0-360°, 800px)"
 else
     # Interactive mode: ask for each parameter
     echo "🎬 Rotation settings:"
@@ -159,9 +159,9 @@ else
         end_angle=360
     fi
 
-    read -p "Image width in pixels (default: 1600): " image_width
+    read -p "Image width in pixels (default: 800): " image_width
     if [ -z "$image_width" ]; then
-        image_width=1600
+        image_width=800
     fi
 fi
 

@@ -18,8 +18,8 @@ PCD_NAMES=("pcd_00005" "pcd_00012" "pcd_00017" "pcd_00018" "pcd_00020" "pcd_0003
            "pcd_00048" "pcd_00050" "pcd_00053" "pcd_00056" "pcd_00059" "pcd_00070" "pcd_00076" "pcd_00087")  
 
 # Rendering parameters
-WIDTH=1024 
-HEIGHT=1024
+WIDTH=512 
+HEIGHT=512
 SPP=128  # Samples per pixel (reduced for faster rendering)
 MAX_GAUSSIANS=5000  # Maximum gaussians per scene
 

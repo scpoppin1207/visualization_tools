@@ -24,8 +24,8 @@ def main():
     parser.add_argument("--ply_ext", type=str, default=".ply", help="PLY file extension (batch mode)")
     parser.add_argument("--output_file", type=str, help="Output file path (single file mode)")
 
-    parser.add_argument("--width", type=int, default=1024, help="Render width")
-    parser.add_argument("--height", type=int, default=1024, help="Render height")
+    parser.add_argument("--width", type=int, default=512, help="Render width")
+    parser.add_argument("--height", type=int, default=512, help="Render height")
     parser.add_argument("--spp", type=int, default=128, help="Samples per pixel")
     parser.add_argument("--max_gaussians", type=int, default=5000, help="Maximum number of gaussians to render")
     parser.add_argument("--camera_distance", type=float, default=None, help="Camera distance from scene center")

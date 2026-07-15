@@ -43,7 +43,7 @@ BRIGHT_LIGHT = {
     "top_light": 2.0,
 }
 
-GS_RENDER_PARAMS = {"width": 1024, "height": 1024, "spp": 128}
+GS_RENDER_PARAMS = {"width": 512, "height": 512, "spp": 128}
 
 
 @dataclass
