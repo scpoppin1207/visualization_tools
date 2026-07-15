@@ -12,7 +12,7 @@ EXP_DIR="./eval/embodied/base/train_embodied_base/epoch_10/vis/epoch_10"        
 OUTPUT_DIR="./eval_png/embodied/base/train_embodied_base/epoch_10/"
 MODE="embodied"                                  # embodied | mono
 VIS_DUAL=false                                   # true if experiment used vis_dual
-SCENES=()                                        # Empty = all scenes; e.g. SCENES=("scene0000_00")
+SCENES=("scene0005_01" "scene0046_01")                                        # Empty = all scenes; e.g. SCENES=("scene0000_00")
 SKIP_EXISTING=true
 
 CONDA_ENV_VOX="mayavi_clean"
@@ -74,6 +74,7 @@ run_vox() {
     echo "=== Phase 1: Voxel visualization ($CONDA_ENV_VOX) ==="
     conda activate "$CONDA_ENV_VOX"
 
+    local _saved_dyld="${DYLD_LIBRARY_PATH:-}"
     if [[ "$(uname)" == "Darwin" && -n "${CONDA_PREFIX:-}" ]]; then
         export DYLD_LIBRARY_PATH="$CONDA_PREFIX/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
     fi
@@ -91,6 +92,14 @@ run_vox() {
         xvfb-run -a -s "-screen 0 1920x1200x24" python vis_exp.py "${vox_args[@]}"
     else
         python vis_exp.py "${vox_args[@]}"
+    fi
+
+    # mayavi_clean ships OpenBLAS; leaving its lib on DYLD_LIBRARY_PATH breaks
+    # renderpy's NumPy (built against macOS Accelerate) in the next phase.
+    if [[ -n "$_saved_dyld" ]]; then
+        export DYLD_LIBRARY_PATH="$_saved_dyld"
+    else
+        unset DYLD_LIBRARY_PATH
     fi
 
     conda deactivate

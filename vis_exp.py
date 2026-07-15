@@ -385,8 +385,12 @@ def run_vox_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
     mlab = get_mlab()
     failures: List[str] = []
     visualizers = {
-        VoxelVisualizer.VIEW_GLOBAL: VoxelVisualizer(view_mode=VoxelVisualizer.VIEW_GLOBAL),
-        VoxelVisualizer.VIEW_LOCAL: VoxelVisualizer(view_mode=VoxelVisualizer.VIEW_LOCAL),
+        VoxelVisualizer.VIEW_GLOBAL: VoxelVisualizer(
+            view_mode=VoxelVisualizer.VIEW_GLOBAL, verbose=False
+        ),
+        VoxelVisualizer.VIEW_LOCAL: VoxelVisualizer(
+            view_mode=VoxelVisualizer.VIEW_LOCAL, verbose=False
+        ),
     }
 
     grouped = group_tasks_by_scene_frame(tasks)
@@ -394,7 +398,6 @@ def run_vox_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
         scene_tasks = grouped[scene]
         global_tasks = scene_tasks.pop(None, [])
         if global_tasks:
-            print(f"\n[VOX] Scene {scene} (global)")
             for task in global_tasks:
                 if _run_single_vox_task(task, visualizers, skip_existing, failures):
                     pass
@@ -404,7 +407,6 @@ def run_vox_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
         if not frames:
             continue
 
-        print(f"\n[VOX] Scene {scene} ({len(frames)} frames)")
         for frame in tqdm(frames, desc=scene, unit="frame"):
             for task in scene_tasks[frame]:
                 _run_single_vox_task(task, visualizers, skip_existing, failures)
@@ -450,8 +452,6 @@ def _run_single_vox_task(
 
 
 def run_gs_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
-    from source.gaussian_visualizer import GaussianVisualizer
-
     failures: List[str] = []
     grouped = group_tasks_by_scene_frame(tasks)
 
@@ -459,7 +459,6 @@ def run_gs_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
         scene_tasks = grouped[scene]
         global_tasks = scene_tasks.pop(None, [])
         if global_tasks:
-            print(f"\n[GS] Scene {scene} (global)")
             for task in global_tasks:
                 _run_single_gs_task(task, skip_existing, failures)
 
@@ -467,7 +466,6 @@ def run_gs_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
         if not frames:
             continue
 
-        print(f"\n[GS] Scene {scene} ({len(frames)} frames)")
         for frame in tqdm(frames, desc=scene, unit="frame"):
             for task in scene_tasks[frame]:
                 _run_single_gs_task(task, skip_existing, failures)
@@ -476,6 +474,8 @@ def run_gs_tasks(tasks: List[RenderTask], skip_existing: bool) -> List[str]:
 
 
 def _run_single_gs_task(task: RenderTask, skip_existing: bool, failures: List[str]) -> bool:
+    from source.gaussian_visualizer import GaussianVisualizer
+
     if skip_existing and task.output_path.is_file():
         return True
 
@@ -488,6 +488,7 @@ def _run_single_gs_task(task: RenderTask, skip_existing: bool, failures: List[st
             max_gaussians=5000,
             render_mode="enhanced",
             camera_preset=task.view_mode,
+            verbose=False,
             **BRIGHT_LIGHT,
         )
         return True

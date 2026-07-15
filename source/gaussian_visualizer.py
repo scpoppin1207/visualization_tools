@@ -21,15 +21,20 @@ from utils.mitsuba_init import init_mitsuba
 class GaussianVisualizer:
     """Gaussian splatting renderer and visualizer."""
 
-    def __init__(self, ply_file_path=None, color_norm_factor=4):
+    def __init__(self, ply_file_path=None, color_norm_factor=4, verbose=True):
         self.ply_file_path = ply_file_path
         self.color_norm_factor = color_norm_factor
+        self.verbose = verbose
         self.xyz = None
         self.colors = None
         self.scales = None
         self.rotations = None
         self.opacity = None
         self._mitsuba_initialized = False
+
+    def _log(self, message):
+        if self.verbose:
+            print(message)
 
     def _ensure_mitsuba(self):
         if not self._mitsuba_initialized:
@@ -41,7 +46,7 @@ class GaussianVisualizer:
         if ply_file_path is not None:
             self.ply_file_path = ply_file_path
 
-        print(f"Loading PLY file: {self.ply_file_path}")
+        self._log(f"Loading PLY file: {self.ply_file_path}")
         plydata = PlyData.read(self.ply_file_path)
         vertex = plydata["vertex"]
 
@@ -64,8 +69,8 @@ class GaussianVisualizer:
         self.colors = enhance_colors_hsv(self.colors, brightness_factor=1.5, saturation_factor=1.5)
         self.colors = np.clip(self.colors, 0.0, 1.0)
 
-        print(f"Successfully loaded {len(self.xyz)} Gaussian ellipsoids")
-        print(
+        self._log(f"Successfully loaded {len(self.xyz)} Gaussian ellipsoids")
+        self._log(
             f"Position range: X[{self.xyz[:, 0].min():.2f}, {self.xyz[:, 0].max():.2f}], "
             f"Y[{self.xyz[:, 1].min():.2f}, {self.xyz[:, 1].max():.2f}], "
             f"Z[{self.xyz[:, 2].min():.2f}, {self.xyz[:, 2].max():.2f}]"
@@ -78,7 +83,7 @@ class GaussianVisualizer:
         bbox_size = np.linalg.norm(bbox_max - bbox_min)
 
         if camera_preset == "global":
-            print("[INFO] Bird's Eye View Camera:")
+            self._log("[INFO] Bird's Eye View Camera:")
             camera_params = {
                 "origin": bbox_center + np.array([0, -bbox_size * 1.5, 0]),
                 "target": bbox_center,
@@ -93,8 +98,8 @@ class GaussianVisualizer:
                 "fov": 45.0,
             }
 
-        print(f"  Origin: {camera_params['origin']}")
-        print(f"  Target: {camera_params['target']}")
+        self._log(f"  Origin: {camera_params['origin']}")
+        self._log(f"  Target: {camera_params['target']}")
         return camera_params
 
     def create_mitsuba_scene(
@@ -166,9 +171,11 @@ class GaussianVisualizer:
         num_gaussians = min(max_gaussians, len(self.xyz))
         selected_indices = opacity_indices[:num_gaussians]
 
-        print(f"Rendering {num_gaussians} gaussians (sorted by opacity)")
+        self._log(f"Rendering {num_gaussians} gaussians (sorted by opacity)")
 
-        for i, idx in enumerate(tqdm(selected_indices, desc="Creating ellipsoids")):
+        for i, idx in enumerate(
+            tqdm(selected_indices, desc="Creating ellipsoids", disable=not self.verbose)
+        ):
             pos = self.xyz[idx]
             scale = self.scales[idx]
             rot = self.rotations[idx]
@@ -245,7 +252,7 @@ class GaussianVisualizer:
             render_params = {"width": 512, "height": 512, "spp": 128}
 
         preset_label = "Bird's Eye View" if camera_preset == "global" else "Local"
-        print(f"Creating Mitsuba scene ({preset_label})...")
+        self._log(f"Creating Mitsuba scene ({preset_label})...")
         scene = self.create_mitsuba_scene(
             max_gaussians=max_gaussians,
             camera_params=camera_params,
@@ -260,10 +267,10 @@ class GaussianVisualizer:
             top_light=top_light,
         )
 
-        print("Rendering...")
+        self._log("Rendering...")
         image = mi.render(scene, spp=render_params["spp"])
         mi.util.write_bitmap(output_path, image)
-        print(f"Saved EXR: {output_path}")
+        self._log(f"Saved EXR: {output_path}")
 
     @classmethod
     def render_file(
@@ -281,10 +288,12 @@ class GaussianVisualizer:
         main_light=3.0,
         fill_light=2.0,
         top_light=1.5,
+        verbose=True,
     ):
         """Load a PLY file and render it with Mitsuba."""
-        print(f"Processing: {os.path.basename(ply_path)}")
-        visualizer = cls(ply_path)
+        if verbose:
+            print(f"Processing: {os.path.basename(ply_path)}")
+        visualizer = cls(ply_path, verbose=verbose)
         visualizer.load_ply_data()
         visualizer.render_mitsuba(
             output_path,

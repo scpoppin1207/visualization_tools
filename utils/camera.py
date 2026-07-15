@@ -2,19 +2,22 @@ import json
 from pathlib import Path
 
 
-def load_camera_config(config_path):
+def load_camera_config(config_path, verbose=True):
     """Load camera configuration from JSON file."""
     config_path = Path(config_path)
     try:
         with open(config_path, "r") as f:
             config = json.load(f)
-        print(f"[INFO] Loaded camera configuration from {config_path}")
+        if verbose:
+            print(f"[INFO] Loaded camera configuration from {config_path}")
         return config
     except FileNotFoundError:
-        print(f"[WARNING] Config file {config_path} not found, using default settings")
+        if verbose:
+            print(f"[WARNING] Config file {config_path} not found, using default settings")
         return None
     except json.JSONDecodeError:
-        print(f"[ERROR] Invalid JSON in {config_path}, using default settings")
+        if verbose:
+            print(f"[ERROR] Invalid JSON in {config_path}, using default settings")
         return None
 
 
@@ -38,14 +41,14 @@ def _default_global_params():
     }
 
 
-def get_camera_params(config, scene_name, pcd_name=None, use_zoom=False, view_mode="local"):
+def get_camera_params(config, scene_name, pcd_name=None, use_zoom=False, view_mode="local", verbose=True):
     """Get camera parameters for local or global voxel views."""
     if view_mode == "global":
-        return _get_global_camera_params(config, scene_name, use_zoom)
-    return _get_local_camera_params(config, scene_name, pcd_name, use_zoom)
+        return _get_global_camera_params(config, scene_name, use_zoom, verbose=verbose)
+    return _get_local_camera_params(config, scene_name, pcd_name, use_zoom, verbose=verbose)
 
 
-def _get_local_camera_params(config, scene_name, pcd_name, use_zoom):
+def _get_local_camera_params(config, scene_name, pcd_name, use_zoom, verbose=True):
     if config is None:
         return _default_local_params()
 
@@ -55,7 +58,8 @@ def _get_local_camera_params(config, scene_name, pcd_name, use_zoom):
             base_params = scene_config[pcd_name].copy()
 
             if use_zoom and "zoom" in base_params:
-                print(f"[INFO] Using ZOOM config for {scene_name}/{pcd_name}")
+                if verbose:
+                    print(f"[INFO] Using ZOOM config for {scene_name}/{pcd_name}")
                 zoom_config = base_params["zoom"]
                 return {
                     "azimuth": base_params.get("azimuth", 75),
@@ -66,25 +70,27 @@ def _get_local_camera_params(config, scene_name, pcd_name, use_zoom):
                 }
 
             if use_zoom:
-                print(
-                    f"[WARNING] Zoom requested but no zoom config found for "
-                    f"{scene_name}/{pcd_name}, using normal view"
-                )
-            else:
+                if verbose:
+                    print(
+                        f"[WARNING] Zoom requested but no zoom config found for "
+                        f"{scene_name}/{pcd_name}, using normal view"
+                    )
+            elif verbose:
                 print(f"[INFO] Using camera config for {scene_name}/{pcd_name}")
 
             if "image_size" not in base_params:
                 base_params["image_size"] = [800, 600]
             return base_params
 
-    print(f"[INFO] No specific config for {scene_name}/{pcd_name}, using default")
+    if verbose:
+        print(f"[INFO] No specific config for {scene_name}/{pcd_name}, using default")
     default_params = config.get("default", _default_local_params()).copy()
     if "image_size" not in default_params:
         default_params["image_size"] = [800, 600]
     return default_params
 
 
-def _get_global_camera_params(config, scene_name, use_zoom):
+def _get_global_camera_params(config, scene_name, use_zoom, verbose=True):
     if config is None:
         return _default_global_params()
 
@@ -92,7 +98,8 @@ def _get_global_camera_params(config, scene_name, use_zoom):
         base_params = config[scene_name].copy()
 
         if use_zoom and "zoom" in base_params:
-            print(f"[INFO] Using ZOOM config for {scene_name}")
+            if verbose:
+                print(f"[INFO] Using ZOOM config for {scene_name}")
             zoom_config = base_params["zoom"]
             return {
                 "azimuth": zoom_config.get("azimuth", base_params.get("azimuth", 0)),
@@ -103,15 +110,17 @@ def _get_global_camera_params(config, scene_name, use_zoom):
             }
 
         if use_zoom:
-            print(f"[WARNING] Zoom requested but no zoom config found for {scene_name}, using normal view")
-        else:
+            if verbose:
+                print(f"[WARNING] Zoom requested but no zoom config found for {scene_name}, using normal view")
+        elif verbose:
             print(f"[INFO] Using camera config for {scene_name}")
 
         if "image_size" not in base_params:
             base_params["image_size"] = [800, 800]
         return base_params
 
-    print(f"[INFO] No specific config for {scene_name}, using default top-down view")
+    if verbose:
+        print(f"[INFO] No specific config for {scene_name}, using default top-down view")
     default_params = config.get("default", _default_global_params()).copy()
     if "image_size" not in default_params:
         default_params["image_size"] = [800, 800]

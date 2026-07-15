@@ -125,11 +125,16 @@ class VoxelVisualizer:
     VIEW_LOCAL = "local"
     VIEW_GLOBAL = "global"
 
-    def __init__(self, view_mode=VIEW_LOCAL, camera_config_path=None, voxel_size=0.08):
+    def __init__(self, view_mode=VIEW_LOCAL, camera_config_path=None, voxel_size=0.08, verbose=True):
         self.view_mode = view_mode
         self.voxel_size = voxel_size
+        self.verbose = verbose
         self.camera_config_path = camera_config_path or self._default_camera_config_path()
         self.camera_config = None
+
+    def _info(self, message):
+        if self.verbose:
+            print(message)
 
     def _default_camera_config_path(self):
         filename = "global.json" if self.view_mode == self.VIEW_GLOBAL else "local.json"
@@ -155,7 +160,7 @@ class VoxelVisualizer:
     def load_camera_config(self, config_path=None):
         """Load camera configuration from JSON."""
         path = config_path or self.camera_config_path
-        self.camera_config = load_camera_config(path)
+        self.camera_config = load_camera_config(path, verbose=self.verbose)
         return self.camera_config
 
     def resolve_camera_params(self, scene_name, pcd_name=None, use_zoom=False):
@@ -168,6 +173,7 @@ class VoxelVisualizer:
             pcd_name=pcd_name,
             use_zoom=use_zoom,
             view_mode=self.view_mode,
+            verbose=self.verbose,
         )
 
     def setup_camera_view(self, voxel_centers, camera_params, azimuth=None):
@@ -181,9 +187,9 @@ class VoxelVisualizer:
         center_offset = camera_params.get("center_offset", [0.0, 0.0, 0.0])
         center = center + np.array(center_offset)
 
-        print(f"[INFO] Scene center: [{center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}]")
-        print(f"[INFO] Scene size: {scene_size:.2f}")
-        print(
+        self._info(f"[INFO] Scene center: [{center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f}]")
+        self._info(f"[INFO] Scene size: {scene_size:.2f}")
+        self._info(
             f"[INFO] Scene bounds: X=[{min_bounds[0]:.2f}, {max_bounds[0]:.2f}], "
             f"Y=[{min_bounds[1]:.2f}, {max_bounds[1]:.2f}], "
             f"Z=[{min_bounds[2]:.2f}, {max_bounds[2]:.2f}]"
@@ -191,7 +197,7 @@ class VoxelVisualizer:
 
         mlab.gcf().scene.camera.parallel_projection = True
         view_label = "top-down view" if self.view_mode == self.VIEW_GLOBAL else "parallel"
-        print(f"[INFO] Parallel projection enabled ({view_label})")
+        self._info(f"[INFO] Parallel projection enabled ({view_label})")
 
         if azimuth is None:
             azimuth = camera_params.get("azimuth", 0 if self.view_mode == self.VIEW_GLOBAL else 75)
@@ -205,7 +211,7 @@ class VoxelVisualizer:
         parallel_scale = scene_size * parallel_scale_factor
         mlab.gcf().scene.camera.parallel_scale = parallel_scale
 
-        print(
+        self._info(
             f"[INFO] Camera view: azimuth={azimuth}, elevation={elevation}, "
             f"parallel_scale={parallel_scale:.2f}"
         )
@@ -216,7 +222,7 @@ class VoxelVisualizer:
         points = np.asarray(pcd.points)
         colors = np.asarray(pcd.colors)
 
-        print(f"[INFO] Loaded {points.shape[0]} points from {pcd_path}")
+        self._info(f"[INFO] Loaded {points.shape[0]} points from {pcd_path}")
 
         if points.size == 0:
             raise ValueError(f"Empty or unreadable point cloud: {pcd_path}")
@@ -257,7 +263,7 @@ class VoxelVisualizer:
             raise ValueError(f"No voxels produced from point cloud: {pcd_path}")
 
         actual_center = np.mean(all_voxel_centers, axis=0)
-        print(
+        self._info(
             f"[INFO] Actual voxel center: "
             f"[{actual_center[0]:.2f}, {actual_center[1]:.2f}, {actual_center[2]:.2f}]"
         )
@@ -282,7 +288,7 @@ class VoxelVisualizer:
                 resolution=8,
             )
 
-        print(
+        self._info(
             f"[INFO] Rendered {len(all_voxel_centers)} voxels "
             f"in {len(color_groups)} color groups"
         )
@@ -325,7 +331,7 @@ class VoxelVisualizer:
             image_size = self._default_image_size()
 
         _create_figure(image_size, bgcolor=(1.0, 1.0, 1.0))
-        print(f"[INFO] Figure size: {image_size[0]}x{image_size[1]}")
+        self._info(f"[INFO] Figure size: {image_size[0]}x{image_size[1]}")
 
         self._render_voxel_groups(color_groups, all_voxel_centers)
 
@@ -339,13 +345,13 @@ class VoxelVisualizer:
             mlab.savefig(str(output_path), size=tuple(image_size))
             if remove_background:
                 remove_white_background(str(output_path))
-            print(f"[INFO] Image saved to: {output_path}")
+            self._info(f"[INFO] Image saved to: {output_path}")
 
         if show_3d:
-            print("[INFO] Showing 3D interactive interface...")
+            self._info("[INFO] Showing 3D interactive interface...")
             mlab.show()
-        else:
-            print("[INFO] Skipping 3D interface, only saving image...")
+        elif save_image:
+            self._info("[INFO] Skipping 3D interface, only saving image...")
 
     def visualize_rotation(
         self,
@@ -370,11 +376,11 @@ class VoxelVisualizer:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(
+        self._info(
             f"[INFO] Total voxels: {len(all_voxel_centers)}, "
             f"Color groups: {len(color_groups)}"
         )
-        print(f"[INFO] Generating {num_frames} rotation frames from {start_angle}° to {end_angle}°")
+        self._info(f"[INFO] Generating {num_frames} rotation frames from {start_angle}° to {end_angle}°")
 
         angles = np.linspace(start_angle, end_angle, num_frames, endpoint=False)
 
@@ -387,13 +393,13 @@ class VoxelVisualizer:
             mlab.savefig(str(output_path), size=tuple(image_size))
             remove_white_background(str(output_path))
 
-            print(
+            self._info(
                 f"[INFO] Saved frame {frame_idx + 1}/{num_frames}: "
                 f"{output_path.name} (azimuth={azimuth:.1f}°)"
             )
             mlab.close(all=True)
 
-        print(f"[INFO] ✅ All {num_frames} frames saved to {output_dir}")
+        self._info(f"[INFO] ✅ All {num_frames} frames saved to {output_dir}")
 
     @staticmethod
     def load_point_cloud(pcd_path):
