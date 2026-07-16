@@ -43,3 +43,6 @@ Thumbs.db
 
 # Vox Viewer local imports
 /vox_viewer/imports/
+
+# GS Viewer local imports
+/gs_viewer/imports/

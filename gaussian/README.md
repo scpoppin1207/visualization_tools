@@ -76,6 +76,19 @@ Open in a web browser to use.
 
 ---
 
+## Interactive Desktop Viewer
+
+For multi-file tabs and split-screen comparison (same UX as `vox_viewer`):
+
+```bash
+conda activate mayavi_clean
+python -m gs_viewer.main
+```
+
+See [gs_viewer/README.md](../gs_viewer/README.md).
+
+---
+
 ## Features
 
 ### Mitsuba Backend

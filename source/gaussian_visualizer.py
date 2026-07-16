@@ -4,18 +4,22 @@
 import os
 import tempfile
 
-import matplotlib.pyplot as plt
-import mitsuba as mi
 import numpy as np
-from matplotlib.colors import LightSource
-from plyfile import PlyData
-from scipy.spatial.transform import Rotation as R
-from tqdm import tqdm
 
 from utils.colors import enhance_colors_hsv
 from utils.geometry import create_ellipsoid_mesh, create_ply_string, quaternion_to_matrix
 from utils.image import center_crop_by_ratio
-from utils.mitsuba_init import init_mitsuba
+
+
+def _progress(iterable, desc="", disable=False):
+    if disable:
+        return iterable
+    try:
+        from tqdm import tqdm
+
+        return tqdm(iterable, desc=desc)
+    except ImportError:
+        return iterable
 
 
 class GaussianVisualizer:
@@ -38,8 +42,80 @@ class GaussianVisualizer:
 
     def _ensure_mitsuba(self):
         if not self._mitsuba_initialized:
+            from utils.mitsuba_init import init_mitsuba
+
             init_mitsuba()
             self._mitsuba_initialized = True
+
+    @staticmethod
+    def _read_gaussian_arrays(ply_file_path):
+        """Read raw Gaussian attributes from a 3DGS-style PLY file."""
+        try:
+            from plyfile import PlyData
+
+            plydata = PlyData.read(str(ply_file_path))
+            vertex = plydata["vertex"]
+            xyz = np.column_stack([vertex["x"], vertex["y"], vertex["z"]]).astype(np.float64)
+            opacity = np.asarray(vertex["opacity"], dtype=np.float64)
+            colors = np.column_stack(
+                [vertex["f_dc_0"], vertex["f_dc_1"], vertex["f_dc_2"]]
+            ).astype(np.float64)
+            scales = np.column_stack(
+                [vertex["scale_0"], vertex["scale_1"], vertex["scale_2"]]
+            ).astype(np.float64)
+            rotations = np.column_stack(
+                [vertex["rot_0"], vertex["rot_1"], vertex["rot_2"], vertex["rot_3"]]
+            ).astype(np.float64)
+            return xyz, opacity, colors, scales, rotations
+        except ImportError:
+            import open3d as o3d
+
+            cloud = o3d.t.io.read_point_cloud(str(ply_file_path))
+            required = (
+                "positions",
+                "opacity",
+                "f_dc_0",
+                "f_dc_1",
+                "f_dc_2",
+                "scale_0",
+                "scale_1",
+                "scale_2",
+                "rot_0",
+                "rot_1",
+                "rot_2",
+                "rot_3",
+            )
+            missing = [name for name in required if name not in cloud.point]
+            if missing:
+                raise ValueError(
+                    f"PLY is missing Gaussian attributes: {', '.join(missing)}"
+                ) from None
+
+            xyz = cloud.point["positions"].numpy().astype(np.float64)
+            opacity = cloud.point["opacity"].numpy().reshape(-1).astype(np.float64)
+            colors = np.column_stack(
+                [
+                    cloud.point["f_dc_0"].numpy().reshape(-1),
+                    cloud.point["f_dc_1"].numpy().reshape(-1),
+                    cloud.point["f_dc_2"].numpy().reshape(-1),
+                ]
+            ).astype(np.float64)
+            scales = np.column_stack(
+                [
+                    cloud.point["scale_0"].numpy().reshape(-1),
+                    cloud.point["scale_1"].numpy().reshape(-1),
+                    cloud.point["scale_2"].numpy().reshape(-1),
+                ]
+            ).astype(np.float64)
+            rotations = np.column_stack(
+                [
+                    cloud.point["rot_0"].numpy().reshape(-1),
+                    cloud.point["rot_1"].numpy().reshape(-1),
+                    cloud.point["rot_2"].numpy().reshape(-1),
+                    cloud.point["rot_3"].numpy().reshape(-1),
+                ]
+            ).astype(np.float64)
+            return xyz, opacity, colors, scales, rotations
 
     def load_ply_data(self, ply_file_path=None):
         """Load Gaussian ellipsoid data from a PLY file."""
@@ -47,24 +123,15 @@ class GaussianVisualizer:
             self.ply_file_path = ply_file_path
 
         self._log(f"Loading PLY file: {self.ply_file_path}")
-        plydata = PlyData.read(self.ply_file_path)
-        vertex = plydata["vertex"]
+        xyz, opacity, colors, scales, rotations = self._read_gaussian_arrays(self.ply_file_path)
 
-        xyz = np.column_stack([vertex["x"], vertex["y"], vertex["z"]])
         self.xyz = xyz[:, [0, 2, 1]] * -1
-
-        self.opacity = vertex["opacity"]
-        self.colors = np.column_stack([vertex["f_dc_0"], vertex["f_dc_1"], vertex["f_dc_2"]])
-        self.scales = np.column_stack([vertex["scale_0"], vertex["scale_1"], vertex["scale_2"]])
-        self.rotations = np.column_stack([
-            vertex["rot_0"], vertex["rot_1"], vertex["rot_2"], vertex["rot_3"]
-        ])
-
-        self.scales = np.exp(self.scales)
-        self.opacity = 1 / (1 + np.exp(-self.opacity))
+        self.opacity = 1 / (1 + np.exp(-opacity))
+        self.scales = np.exp(scales)
+        self.rotations = rotations
 
         norm = np.sqrt(self.color_norm_factor * np.pi)
-        self.colors = np.abs(self.colors) / norm
+        self.colors = np.abs(colors) / norm
         self.colors = np.clip(self.colors, 0, 1)
         self.colors = enhance_colors_hsv(self.colors, brightness_factor=1.5, saturation_factor=1.5)
         self.colors = np.clip(self.colors, 0.0, 1.0)
@@ -75,6 +142,84 @@ class GaussianVisualizer:
             f"Y[{self.xyz[:, 1].min():.2f}, {self.xyz[:, 1].max():.2f}], "
             f"Z[{self.xyz[:, 2].min():.2f}, {self.xyz[:, 2].max():.2f}]"
         )
+
+    def select_for_display(
+        self,
+        max_gaussians=2000,
+        opacity_threshold=0.05,
+        min_scale=0.005,
+    ):
+        """Pick the most opaque Gaussians for interactive display."""
+        if self.xyz is None:
+            raise RuntimeError("Call load_ply_data() before select_for_display()")
+
+        opacity = np.asarray(self.opacity).reshape(-1)
+        scales = np.asarray(self.scales)
+        valid = (opacity >= opacity_threshold) & (np.max(scales, axis=1) >= min_scale)
+        indices = np.flatnonzero(valid)
+        if len(indices) == 0:
+            return (
+                np.empty((0, 3)),
+                np.empty((0, 3)),
+                np.empty((0, 3)),
+                np.empty((0, 4)),
+                np.empty((0,)),
+            )
+
+        order = indices[np.argsort(-opacity[indices])]
+        selected = order[: min(max_gaussians, len(order))]
+        return (
+            self.xyz[selected],
+            self.colors[selected],
+            self.scales[selected],
+            self.rotations[selected],
+            opacity[selected],
+        )
+
+    @staticmethod
+    def build_combined_ellipsoid_mesh(
+        xyz,
+        colors,
+        scales,
+        rotations,
+        opacity,
+        scale_multiplier=1.0,
+        n_theta=8,
+        n_phi=4,
+    ):
+        """Build one triangle mesh for Mayavi from selected ellipsoids."""
+        unit_vertices, _, faces = create_ellipsoid_mesh(n_theta=n_theta, n_phi=n_phi)
+        unit_vertices = np.asarray(unit_vertices, dtype=np.float64)
+        faces = np.asarray(faces, dtype=np.int64)
+        verts_per = len(unit_vertices)
+        faces_per = len(faces)
+        count = len(xyz)
+        if count == 0:
+            return (
+                np.empty((0, 3)),
+                np.empty((0, 3), dtype=np.int64),
+                np.empty((0, 3)),
+                np.empty((0,)),
+            )
+
+        all_vertices = np.empty((count * verts_per, 3), dtype=np.float64)
+        all_faces = np.empty((count * faces_per, 3), dtype=np.int64)
+        all_colors = np.empty((count * verts_per, 3), dtype=np.float64)
+        all_opacity = np.empty(count * verts_per, dtype=np.float64)
+
+        for i in range(count):
+            scale = np.asarray(scales[i], dtype=np.float64) * float(scale_multiplier)
+            rot = quaternion_to_matrix(rotations[i])[:3, :3]
+            scaled = unit_vertices * scale[np.newaxis, :]
+            world = (rot @ scaled.T).T + xyz[i]
+            start = i * verts_per
+            stop = start + verts_per
+            all_vertices[start:stop] = world
+            all_faces[i * faces_per : (i + 1) * faces_per] = faces + start
+            all_colors[start:stop] = colors[i]
+            all_opacity[start:stop] = opacity[i]
+
+        return all_vertices, all_faces, all_colors, all_opacity
 
     def _default_camera_params(self, camera_preset="local"):
         bbox_min = self.xyz.min(axis=0)
@@ -118,6 +263,7 @@ class GaussianVisualizer:
     ):
         """Create a Mitsuba scene with Gaussian ellipsoids."""
         self._ensure_mitsuba()
+        import mitsuba as mi
 
         if camera_params is None:
             camera_params = self._default_camera_params(camera_preset)
@@ -174,7 +320,7 @@ class GaussianVisualizer:
         self._log(f"Rendering {num_gaussians} gaussians (sorted by opacity)")
 
         for i, idx in enumerate(
-            tqdm(selected_indices, desc="Creating ellipsoids", disable=not self.verbose)
+            _progress(selected_indices, desc="Creating ellipsoids", disable=not self.verbose)
         ):
             pos = self.xyz[idx]
             scale = self.scales[idx]
@@ -266,6 +412,8 @@ class GaussianVisualizer:
             fill_light=fill_light,
             top_light=top_light,
         )
+
+        import mitsuba as mi
 
         self._log("Rendering...")
         image = mi.render(scene, spp=render_params["spp"])
@@ -387,6 +535,8 @@ class GaussianVisualizer:
 
     def create_ellipsoid_surface(self, center, scale, rotation, resolution=12):
         """Create ellipsoid surface points for Matplotlib."""
+        from scipy.spatial.transform import Rotation as SciPyRotation
+
         u = np.linspace(0, 2 * np.pi, resolution)
         v = np.linspace(0, np.pi, resolution)
         x_sphere = np.outer(np.cos(u), np.sin(v))
@@ -397,7 +547,7 @@ class GaussianVisualizer:
         y_ellipsoid = y_sphere * scale[1]
         z_ellipsoid = z_sphere * scale[2]
 
-        rot_matrix = R.from_quat(rotation).as_matrix()
+        rot_matrix = SciPyRotation.from_quat(rotation).as_matrix()
         points = np.stack([
             x_ellipsoid.flatten(),
             y_ellipsoid.flatten(),
@@ -422,6 +572,9 @@ class GaussianVisualizer:
         crop_ratio=0.7,
     ):
         """Render 3D ellipsoid visualization with Matplotlib."""
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import LightSource
+
         print("Starting 3D ellipsoid visualization...")
 
         xyz, colors, scales, rotations, opacity = self.filter_and_sample(

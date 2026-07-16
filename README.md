@@ -182,13 +182,28 @@ bash vis_occ_rot.sh    # Rotating animation + GIF
 
 **Quick mode:** Auto-generate with defaults - only select method/scene/frame.
 
-**[→ See detailed documentation](voxels/README.md)**
+**Interactive desktop viewer:**
+
+```bash
+conda activate mayavi_clean
+python -m vox_viewer.main
+```
+
+**[→ See detailed documentation](voxels/README.md)** · **[Vox Viewer](vox_viewer/README.md)**
 
 ---
 
-### Gaussian Splatting Rendering ([gaussian/](gaussian/README.md))
+### Gaussian Splatting ([gaussian/](gaussian/README.md) · [gs_viewer/](gs_viewer/README.md))
 
-High-quality Gaussian splatting visualization with Mitsuba or matplotlib.
+**Interactive desktop viewer** (PyQt5 + Mayavi，支持多文件标签页与分屏对比)：
+
+```bash
+conda activate mayavi_clean
+python -m gs_viewer.main
+python -m gs_viewer.main --check
+```
+
+High-quality offline Gaussian rendering with Mitsuba or matplotlib:
 
 **Mitsuba (recommended):**
 ```bash 
@@ -204,7 +219,7 @@ conda activate renderpy
 bash vis_gs.sh 
 ```
 
-**[→ See detailed documentation](gaussian/README.md)**
+**[→ See detailed documentation](gaussian/README.md)** · **[GS Viewer](gs_viewer/README.md)**
 
 ---
 
