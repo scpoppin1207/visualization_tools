@@ -415,6 +415,37 @@ class ViewerTab(QtWidgets.QWidget):
         if hasattr(self, "model"):
             self.model.scene.mayavi_scene.render()
 
+    def get_camera_state(self):
+        """Capture the current Mayavi/VTK camera pose for cross-pane sync."""
+        if not self._rendered:
+            return None
+        camera = self._tvtk_scene().camera
+        return {
+            "position": tuple(float(v) for v in camera.position),
+            "focal_point": tuple(float(v) for v in camera.focal_point),
+            "view_up": tuple(float(v) for v in camera.view_up),
+            "parallel_projection": bool(camera.parallel_projection),
+            "parallel_scale": float(camera.parallel_scale),
+            "view_angle": float(camera.view_angle),
+            "clipping_range": tuple(float(v) for v in camera.clipping_range),
+        }
+
+    def set_camera_state(self, state):
+        """Apply a camera pose captured from another comparison window."""
+        if not state or not self._rendered:
+            return False
+        camera = self._tvtk_scene().camera
+        camera.position = state["position"]
+        camera.focal_point = state["focal_point"]
+        camera.view_up = state["view_up"]
+        camera.parallel_projection = state["parallel_projection"]
+        camera.parallel_scale = state["parallel_scale"]
+        camera.view_angle = state["view_angle"]
+        camera.clipping_range = state["clipping_range"]
+        camera.compute_view_plane_normal()
+        self.model.scene.mayavi_scene.render()
+        return True
+
     def save_screenshot(self):
         if not self._rendered:
             QtWidgets.QMessageBox.information(self, "尚未渲染", "请等待当前 PLY 完成渲染。")
@@ -488,6 +519,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.split_action.setCheckable(True)
         self.split_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+S"))
         self.split_action.toggled.connect(self.set_split_enabled)
+        self.sync_view_action = header.addAction("同步视角")
+        self.sync_view_action.setIcon(
+            self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)
+        )
+        self.sync_view_action.setToolTip("将左侧窗口的视角同步到右侧对比窗口")
+        self.sync_view_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
+        self.sync_view_action.setEnabled(False)
+        self.sync_view_action.triggered.connect(self.sync_viewpoints)
 
         self.splitter = ComparisonSplitter()
         self.splitter.setObjectName("viewerSplitter")
@@ -589,7 +628,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "① 从资源管理器拖入一个或多个 .ply；或复制文件后在这里按 Ctrl+V。\n"
             "② 左键旋转、滚轮缩放、中键平移；不同文件会分别出现在标签页中。\n"
             "③ 打开至少两个 PLY 后点击“分屏对比”，可将标签页放在左右两侧。\n"
-            "④ PLY 需要包含 x/y/z，建议同时包含 red/green/blue；无颜色时显示为黑色。"
+            "④ 分屏后点击“同步视角”，可将左侧窗口的相机视角同步到右侧。\n"
+            "⑤ PLY 需要包含 x/y/z，建议同时包含 red/green/blue；无颜色时显示为黑色。"
         )
         guide.setObjectName("guideBox")
         guide.setWordWrap(True)
@@ -630,6 +670,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.right_tabs.show()
             self.move_right_button.show()
             self.right_pane_label.show()
+            self.sync_view_action.setEnabled(True)
 
             for index in viewer_indices:
                 self.tabs.widget(index).set_compact_mode(True)
@@ -648,11 +689,43 @@ class MainWindow(QtWidgets.QMainWindow):
                 ),
             )
             self.statusBar().showMessage(
-                "已启用分屏 · 左右标签页中的 Mayavi 场景可独立操作", 5000
+                "已启用分屏 · 可用“同步视角”对齐左右相机", 5000
             )
             return
 
         self._merge_right_pane()
+
+    def sync_viewpoints(self):
+        """Copy the left pane camera to all comparison windows on the right."""
+        if not self.split_action.isChecked():
+            self.statusBar().showMessage("请先启用分屏对比", 3000)
+            return
+
+        source = self.tabs.currentWidget()
+        if not isinstance(source, ViewerTab):
+            left_indices = self._viewer_indices(self.tabs)
+            if not left_indices:
+                self.statusBar().showMessage("左侧没有可同步的 voxel 窗口", 3500)
+                return
+            source = self.tabs.widget(left_indices[0])
+
+        state = source.get_camera_state()
+        if state is None:
+            self.statusBar().showMessage("请等待左侧窗口渲染完成后再同步视角", 3500)
+            return
+
+        synced = 0
+        for index in self._viewer_indices(self.right_tabs):
+            target = self.right_tabs.widget(index)
+            if target.set_camera_state(state):
+                synced += 1
+
+        if synced:
+            self.statusBar().showMessage(
+                f"已将左侧视角同步到右侧 {synced} 个窗口", 4000
+            )
+        else:
+            self.statusBar().showMessage("右侧暂无可同步的对比窗口", 3500)
 
     def _merge_right_pane(self):
         while self.right_tabs.count():
@@ -664,6 +737,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.right_tabs.hide()
         self.move_right_button.hide()
         self.right_pane_label.hide()
+        self.sync_view_action.setEnabled(False)
         for index in self._viewer_indices(self.tabs):
             self.tabs.widget(index).set_compact_mode(False)
         self.split_action.setText("分屏对比")
