@@ -125,12 +125,35 @@ class VoxelVisualizer:
     VIEW_LOCAL = "local"
     VIEW_GLOBAL = "global"
 
-    def __init__(self, view_mode=VIEW_LOCAL, camera_config_path=None, voxel_size=0.08, verbose=True):
+    # Special occupancy classes saved as pure colors in the PLY. Never drawn.
+    EMPTY_COLOR = (255, 255, 255)
+    IGNORE_COLOR = (0, 0, 0)
+
+    def __init__(
+        self,
+        view_mode=VIEW_LOCAL,
+        camera_config_path=None,
+        voxel_size=0.08,
+        verbose=True,
+    ):
         self.view_mode = view_mode
         self.voxel_size = voxel_size
         self.verbose = verbose
         self.camera_config_path = camera_config_path or self._default_camera_config_path()
         self.camera_config = None
+
+    @classmethod
+    def is_empty_color(cls, color_rgb):
+        return tuple(int(c) for c in color_rgb) == cls.EMPTY_COLOR
+
+    @classmethod
+    def is_ignore_color(cls, color_rgb):
+        return tuple(int(c) for c in color_rgb) == cls.IGNORE_COLOR
+
+    @classmethod
+    def is_undrawn_color(cls, color_rgb):
+        """Empty and ignore voxels are stored in the PLY but not rendered."""
+        return cls.is_empty_color(color_rgb) or cls.is_ignore_color(color_rgb)
 
     def _info(self, message):
         if self.verbose:
@@ -270,13 +293,21 @@ class VoxelVisualizer:
 
         return color_groups, all_voxel_centers
 
+    def _iter_draw_groups(self, color_groups):
+        """Yield (color_rgb, centers), skipping empty and ignore voxels."""
+        groups = []
+        for color_rgb, centers in color_groups.items():
+            if self.is_undrawn_color(color_rgb):
+                continue
+            groups.append((color_rgb, np.asarray(centers)))
+        return groups
+
     def _render_voxel_groups(self, color_groups, all_voxel_centers):
         """Draw grouped voxels in the current Mayavi figure."""
         mlab = get_mlab()
-        for color_rgb, centers in color_groups.items():
-            centers = np.array(centers)
-            color_normalized = np.array(color_rgb) / 255.0
-
+        drawn = 0
+        for color_rgb, centers in self._iter_draw_groups(color_groups):
+            color_normalized = np.asarray(color_rgb, dtype=np.float64) / 255.0
             mlab.points3d(
                 centers[:, 0],
                 centers[:, 1],
@@ -287,10 +318,12 @@ class VoxelVisualizer:
                 opacity=1.0,
                 resolution=8,
             )
+            drawn += len(centers)
 
         self._info(
-            f"[INFO] Rendered {len(all_voxel_centers)} voxels "
-            f"in {len(color_groups)} color groups"
+            f"[INFO] Rendered {drawn}/{len(all_voxel_centers)} voxels "
+            f"in {len(color_groups)} color groups "
+            "(empty/ignore skipped)"
         )
 
     def _default_image_size(self):

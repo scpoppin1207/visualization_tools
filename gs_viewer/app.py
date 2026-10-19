@@ -668,9 +668,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sync_view_action.setIcon(
             self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)
         )
-        self.sync_view_action.setToolTip("将左侧窗口的视角同步到右侧对比窗口")
+        self.sync_view_action.setToolTip(
+            "以当前窗口（或第一个窗口）为准，同步所有已打开窗口的相机位姿"
+        )
         self.sync_view_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
-        self.sync_view_action.setEnabled(False)
         self.sync_view_action.triggered.connect(self.sync_viewpoints)
 
         self.splitter = ComparisonSplitter()
@@ -773,7 +774,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "① 从资源管理器拖入一个或多个 .ply；或复制文件后在这里按 Ctrl+V。\n"
             "② 左键旋转、滚轮缩放、中键平移；不同文件会分别出现在标签页中。\n"
             "③ 打开至少两个 PLY 后点击“分屏对比”，可将标签页放在左右两侧。\n"
-            "④ 分屏后点击“同步视角”，可将左侧窗口的相机视角同步到右侧。\n"
+            "④ 点击“同步视角”，可将当前窗口位姿同步到所有已打开的窗口（无需分屏）。\n"
             "⑤ PLY 需要包含 x/y/z、opacity、f_dc_*、scale_*、rot_*（标准 3DGS 属性）。\n"
             "⑥ 默认用球体快速预览；勾选“椭球”可切换各向异性网格（更慢）。\n"
             "⑦ 可用 Max GS / Opacity / Scale 控制显示数量与大小，再点“重新生成”。"
@@ -823,7 +824,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.right_tabs.show()
             self.move_right_button.show()
             self.right_pane_label.show()
-            self.sync_view_action.setEnabled(True)
 
             for index in viewer_indices:
                 self.tabs.widget(index).set_compact_mode(True)
@@ -842,43 +842,50 @@ class MainWindow(QtWidgets.QMainWindow):
                 ),
             )
             self.statusBar().showMessage(
-                "已启用分屏 · 可用“同步视角”对齐左右相机", 5000
+                "已启用分屏 · 左右标签页中的 Mayavi 场景可独立操作", 5000
             )
             return
 
         self._merge_right_pane()
 
+    def _all_viewers(self):
+        viewers = []
+        for tabs in (self.tabs, self.right_tabs):
+            for index in self._viewer_indices(tabs):
+                viewers.append(tabs.widget(index))
+        return viewers
+
     def sync_viewpoints(self):
-        """Copy the left pane camera to all comparison windows on the right."""
-        if not self.split_action.isChecked():
-            self.statusBar().showMessage("请先启用分屏对比", 3000)
+        """Copy the source camera pose to every open viewer tab."""
+        viewers = self._all_viewers()
+        if len(viewers) < 2:
+            self.statusBar().showMessage("请先打开至少两个窗口再同步视角", 3500)
             return
 
         source = self.tabs.currentWidget()
         if not isinstance(source, ViewerTab):
-            left_indices = self._viewer_indices(self.tabs)
-            if not left_indices:
-                self.statusBar().showMessage("左侧没有可同步的 Gaussian 窗口", 3500)
-                return
-            source = self.tabs.widget(left_indices[0])
+            source = self.right_tabs.currentWidget()
+        if not isinstance(source, ViewerTab):
+            source = viewers[0]
 
         state = source.get_camera_state()
         if state is None:
-            self.statusBar().showMessage("请等待左侧窗口渲染完成后再同步视角", 3500)
+            self.statusBar().showMessage("请等待源窗口渲染完成后再同步视角", 3500)
             return
 
         synced = 0
-        for index in self._viewer_indices(self.right_tabs):
-            target = self.right_tabs.widget(index)
+        for target in viewers:
+            if target is source:
+                continue
             if target.set_camera_state(state):
                 synced += 1
 
         if synced:
             self.statusBar().showMessage(
-                f"已将左侧视角同步到右侧 {synced} 个窗口", 4000
+                f"已将 {source.ply_path.name} 的视角同步到 {synced} 个窗口", 4000
             )
         else:
-            self.statusBar().showMessage("右侧暂无可同步的对比窗口", 3500)
+            self.statusBar().showMessage("其他窗口尚未渲染完成，暂无法同步", 3500)
 
     def _merge_right_pane(self):
         while self.right_tabs.count():
@@ -890,7 +897,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.right_tabs.hide()
         self.move_right_button.hide()
         self.right_pane_label.hide()
-        self.sync_view_action.setEnabled(False)
         for index in self._viewer_indices(self.tabs):
             self.tabs.widget(index).set_compact_mode(False)
         self.split_action.setText("分屏对比")

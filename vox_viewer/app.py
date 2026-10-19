@@ -253,6 +253,7 @@ class ViewerTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.ply_path = ply_path.resolve()
         self._centers = None
+        self._color_groups = None
         self._rendered = False
         self._compact = False
         self._build_ui()
@@ -328,6 +329,49 @@ class ViewerTab(QtWidgets.QWidget):
         self.style().unpolish(self)
         self.style().polish(self)
 
+    def _draw_cached_voxels(self, reset_camera=True):
+        """Draw currently cached color groups into the Mayavi scene."""
+        if self._color_groups is None or not hasattr(self, "model"):
+            return
+
+        visualizer = VoxelVisualizer(
+            view_mode=VoxelVisualizer.VIEW_LOCAL,
+            voxel_size=self.voxel_size.value(),
+            verbose=False,
+        )
+        scene = self.model.scene
+        figure = scene.mayavi_scene
+        scene.mlab.clf(figure=figure)
+
+        drawn = 0
+        for color_rgb, group_centers in visualizer._iter_draw_groups(self._color_groups):
+            group_centers = np.asarray(group_centers)
+            scene.mlab.points3d(
+                group_centers[:, 0],
+                group_centers[:, 1],
+                group_centers[:, 2],
+                scale_factor=self.voxel_size.value(),
+                mode="cube",
+                color=tuple(np.asarray(color_rgb) / 255.0),
+                opacity=1.0,
+                resolution=8,
+                figure=figure,
+            )
+            drawn += len(group_centers)
+
+        if reset_camera:
+            self._apply_default_camera()
+        self._tvtk_scene().background = (0.96, 0.97, 0.99)
+        scene.mayavi_scene.render()
+        self._rendered = True
+
+        total = 0 if self._centers is None else len(self._centers)
+        skipped = total - drawn
+        status = f"已生成 {total:,} 个体素 · 显示 {drawn:,}"
+        if skipped:
+            status += f" · 已跳过 empty/ignore {skipped:,}"
+        self.status_label.setText(status)
+
     def render_voxels(self):
         if not hasattr(self, "model"):
             return
@@ -345,34 +389,13 @@ class ViewerTab(QtWidgets.QWidget):
                 verbose=False,
             )
             color_groups, centers = visualizer._load_and_voxelize(self.ply_path)
-
-            scene = self.model.scene
-            figure = scene.mayavi_scene
-            scene.mlab.clf(figure=figure)
-            for color_rgb, group_centers in color_groups.items():
-                group_centers = np.asarray(group_centers)
-                scene.mlab.points3d(
-                    group_centers[:, 0],
-                    group_centers[:, 1],
-                    group_centers[:, 2],
-                    scale_factor=self.voxel_size.value(),
-                    mode="cube",
-                    color=tuple(np.asarray(color_rgb) / 255.0),
-                    opacity=1.0,
-                    resolution=8,
-                    figure=figure,
-                )
-
+            self._color_groups = color_groups
             self._centers = centers
-            self._apply_default_camera()
-            self._tvtk_scene().background = (0.96, 0.97, 0.99)
-            scene.mayavi_scene.render()
-            self._rendered = True
-            self.status_label.setText(
-                f"已生成 {len(centers):,} 个体素 · {len(color_groups):,} 个颜色组"
-            )
+            self._draw_cached_voxels(reset_camera=True)
             self.message.emit(f"已打开 {self.ply_path.name}")
         except Exception as exc:
+            self._color_groups = None
+            self._centers = None
             self.status_label.setText("渲染失败")
             self.message.emit(f"渲染失败：{exc}")
             QtWidgets.QMessageBox.critical(
@@ -523,9 +546,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sync_view_action.setIcon(
             self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload)
         )
-        self.sync_view_action.setToolTip("将左侧窗口的视角同步到右侧对比窗口")
+        self.sync_view_action.setToolTip(
+            "以当前窗口（或第一个窗口）为准，同步所有已打开窗口的相机位姿"
+        )
         self.sync_view_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+V"))
-        self.sync_view_action.setEnabled(False)
         self.sync_view_action.triggered.connect(self.sync_viewpoints)
 
         self.splitter = ComparisonSplitter()
@@ -628,12 +652,13 @@ class MainWindow(QtWidgets.QMainWindow):
             "① 从资源管理器拖入一个或多个 .ply；或复制文件后在这里按 Ctrl+V。\n"
             "② 左键旋转、滚轮缩放、中键平移；不同文件会分别出现在标签页中。\n"
             "③ 打开至少两个 PLY 后点击“分屏对比”，可将标签页放在左右两侧。\n"
-            "④ 分屏后点击“同步视角”，可将左侧窗口的相机视角同步到右侧。\n"
-            "⑤ PLY 需要包含 x/y/z，建议同时包含 red/green/blue；无颜色时显示为黑色。"
+            "④ 点击“同步视角”，可将当前窗口位姿同步到所有已打开的窗口（无需分屏）。\n"
+            "⑤ PLY 需要包含 x/y/z，建议同时包含 red/green/blue；无颜色时显示为黑色。\n"
+            "⑥ 纯白 empty / 纯黑 ignore 体素不绘制。"
         )
         guide.setObjectName("guideBox")
         guide.setWordWrap(True)
-        guide.setMinimumHeight(136)
+        guide.setMinimumHeight(158)
         layout.addWidget(guide)
         layout.addStretch(1)
         scroll.setWidget(page)
@@ -670,7 +695,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.right_tabs.show()
             self.move_right_button.show()
             self.right_pane_label.show()
-            self.sync_view_action.setEnabled(True)
 
             for index in viewer_indices:
                 self.tabs.widget(index).set_compact_mode(True)
@@ -689,43 +713,50 @@ class MainWindow(QtWidgets.QMainWindow):
                 ),
             )
             self.statusBar().showMessage(
-                "已启用分屏 · 可用“同步视角”对齐左右相机", 5000
+                "已启用分屏 · 左右标签页中的 Mayavi 场景可独立操作", 5000
             )
             return
 
         self._merge_right_pane()
 
+    def _all_viewers(self):
+        viewers = []
+        for tabs in (self.tabs, self.right_tabs):
+            for index in self._viewer_indices(tabs):
+                viewers.append(tabs.widget(index))
+        return viewers
+
     def sync_viewpoints(self):
-        """Copy the left pane camera to all comparison windows on the right."""
-        if not self.split_action.isChecked():
-            self.statusBar().showMessage("请先启用分屏对比", 3000)
+        """Copy the source camera pose to every open viewer tab."""
+        viewers = self._all_viewers()
+        if len(viewers) < 2:
+            self.statusBar().showMessage("请先打开至少两个窗口再同步视角", 3500)
             return
 
         source = self.tabs.currentWidget()
         if not isinstance(source, ViewerTab):
-            left_indices = self._viewer_indices(self.tabs)
-            if not left_indices:
-                self.statusBar().showMessage("左侧没有可同步的 voxel 窗口", 3500)
-                return
-            source = self.tabs.widget(left_indices[0])
+            source = self.right_tabs.currentWidget()
+        if not isinstance(source, ViewerTab):
+            source = viewers[0]
 
         state = source.get_camera_state()
         if state is None:
-            self.statusBar().showMessage("请等待左侧窗口渲染完成后再同步视角", 3500)
+            self.statusBar().showMessage("请等待源窗口渲染完成后再同步视角", 3500)
             return
 
         synced = 0
-        for index in self._viewer_indices(self.right_tabs):
-            target = self.right_tabs.widget(index)
+        for target in viewers:
+            if target is source:
+                continue
             if target.set_camera_state(state):
                 synced += 1
 
         if synced:
             self.statusBar().showMessage(
-                f"已将左侧视角同步到右侧 {synced} 个窗口", 4000
+                f"已将 {source.ply_path.name} 的视角同步到 {synced} 个窗口", 4000
             )
         else:
-            self.statusBar().showMessage("右侧暂无可同步的对比窗口", 3500)
+            self.statusBar().showMessage("其他窗口尚未渲染完成，暂无法同步", 3500)
 
     def _merge_right_pane(self):
         while self.right_tabs.count():
@@ -737,7 +768,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.right_tabs.hide()
         self.move_right_button.hide()
         self.right_pane_label.hide()
-        self.sync_view_action.setEnabled(False)
         for index in self._viewer_indices(self.tabs):
             self.tabs.widget(index).set_compact_mode(False)
         self.split_action.setText("分屏对比")
